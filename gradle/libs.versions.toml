@@ -1,0 +1,47 @@
+[versions]
+kotlin = "2.4.10"
+coroutines = "1.11.0"
+serialization = "1.11.0"
+kctfork = "0.13.0"
+junit = "5.11.4"
+
+# Kotlin for Forge ships exactly these Kotlin, coroutines and serialization versions as a loaded
+# mod, which is why the numbers above must not drift from it.
+minecraft = "26.2"
+neoforge = "26.2.0.69"
+moddev = "2.0.144"
+
+# What the launcher compiles against, and only that: `Entrypoint` to extend and `Dist` to name.
+# Both are on a NeoForge run's classpath already, so they are `compileOnly` there -- which is what
+# lets the launcher be a plain Java project rather than another ModDevGradle one.
+fancymodloader = "11.0.16"
+mergetool = "2.0.7"
+kff = "6.3.0"
+
+[libraries]
+kotlin-stdlib = { module = "org.jetbrains.kotlin:kotlin-stdlib", version.ref = "kotlin" }
+kotlin-reflect = { module = "org.jetbrains.kotlin:kotlin-reflect", version.ref = "kotlin" }
+kotlin-compiler-embeddable = { module = "org.jetbrains.kotlin:kotlin-compiler-embeddable", version.ref = "kotlin" }
+kotlin-gradle-plugin-api = { module = "org.jetbrains.kotlin:kotlin-gradle-plugin-api", version.ref = "kotlin" }
+kotlin-gradle-plugin = { module = "org.jetbrains.kotlin:kotlin-gradle-plugin", version.ref = "kotlin" }
+
+coroutines-core = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core", version.ref = "coroutines" }
+coroutines-test = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-test", version.ref = "coroutines" }
+serialization-json = { module = "org.jetbrains.kotlinx:kotlinx-serialization-json", version.ref = "serialization" }
+serialization-cbor = { module = "org.jetbrains.kotlinx:kotlinx-serialization-cbor", version.ref = "serialization" }
+
+kctfork-core = { module = "dev.zacsweers.kctfork:core", version.ref = "kctfork" }
+
+kotlinforforge = { module = "thedarkcolour:kotlinforforge-neoforge", version.ref = "kff" }
+
+fml-loader = { module = "net.neoforged.fancymodloader:loader", version.ref = "fancymodloader" }
+fml-distmarker = { module = "net.neoforged:mergetool", version.ref = "mergetool" }
+
+junit-jupiter = { module = "org.junit.jupiter:junit-jupiter", version.ref = "junit" }
+junit-jupiter-api = { module = "org.junit.jupiter:junit-jupiter-api", version.ref = "junit" }
+junit-platform-launcher = { module = "org.junit.platform:junit-platform-launcher", version = "1.11.4" }
+
+[plugins]
+kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
+kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }
+moddev = { id = "net.neoforged.moddev", version.ref = "moddev" }

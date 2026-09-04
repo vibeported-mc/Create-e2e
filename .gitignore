@@ -1,0 +1,24 @@
+# Gradle
+.gradle/
+build/
+!gradle/wrapper/gradle-wrapper.jar
+
+# The game directories the driver runs in. `run/driverServer` and `run/driverClient` are the
+# harvested templates; every client the driver starts gets a `run/client-<name>` of its own.
+run/
+
+# IDEs
+.idea/
+*.iml
+*.ipr
+*.iws
+.vscode/
+.eclipse/
+bin/
+.settings/
+.classpath
+.project
+
+# OS
+.DS_Store
+Thumbs.db
