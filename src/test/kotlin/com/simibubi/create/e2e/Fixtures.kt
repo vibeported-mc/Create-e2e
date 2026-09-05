@@ -1,6 +1,8 @@
 package com.simibubi.create.e2e
 
 import dev.vibeported.mc.driver.ClusterScope
+import dev.vibeported.mc.driver.input.HeldKeys
+import net.minecraft.client.KeyMapping
 import dev.vibeported.mc.driver.MouseButton
 import dev.vibeported.mc.driver.UiLayer
 import dev.vibeported.mc.driver.allowFlight
@@ -119,9 +121,29 @@ internal fun ClusterScope.driving(
 private suspend fun aCleanSlate() {
     runCommand("time set day")
 
+    // Nothing is to wander into a scene. A cow standing on a belt is counted as something the belt
+    // is carrying, a slime pushes a contraption off its rails, and either of them in front of the
+    // crosshair is a click that lands on an animal rather than on the block being tested -- and all
+    // three read as the mod misbehaving rather than as the weather.
+    //
+    // The gamerule stops anything new arriving; peaceful clears the hostiles already about. What is
+    // deliberately not done is killing what is left standing: the stock keeper's shop is minded by a
+    // pig, a train is a contraption entity, and a blanket kill would take both.
+    runCommand("gamerule doMobSpawning false")
+    runCommand("difficulty peaceful")
+
     setUiLayer(ALEX, UiLayer.GUI, true)
 
     closeAnyScreen()
+
+    // And nothing still held down. A test that failed part way through a gesture -- driving a train
+    // is a key held for a minute at a time -- leaves it held, and the next test then starts walking
+    // forwards for reasons it has no way of discovering.
+    client(ALEX) {
+        HeldKeys.releaseAll()
+        KeyMapping.releaseAll()
+        awaitTicks(1)
+    }
 }
 
 /**
@@ -173,6 +195,20 @@ internal object Zones {
     const val GOGGLE_CONFIG: Int = 2592
     const val WORLDSHAPER: Int = 2624
     const val SCHEMATIC_EDIT: Int = 2656
+
+    // The train scenes need room: a station has to belong to a run of track, and a run of track is
+    // long. They also cannot share one -- a stretch of rails stays claimed by the railway after the
+    // blocks are cleared away, so a second station laid over the same rails is refused by something
+    // that no longer exists in the world.
+    const val STATION_NAMING: Int = 2720
+    const val STATION_ASSEMBLY: Int = 2784
+    const val SCHEDULE: Int = 2848
+
+    /**
+     * The circuit is not a scene but a landscape: forty blocks across and forty along, laid on the
+     * world's own grass rather than on a floor of its own. So it is given the far end to itself.
+     */
+    const val TRAIN_CIRCUIT: Int = 3200
 }
 
 /**

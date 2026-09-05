@@ -276,7 +276,18 @@ internal suspend fun clickGui(x: Double, y: Double) {
  * quarter twice is what puts a panel there and then opens that same one.
  */
 internal suspend fun rightClickAt(point: Vec3, expected: BlockPos) {
-    standAt(Vec3(expected.x + 0.5, expected.y.toDouble(), expected.z + 3.5), point, settle = 10)
+    rightClickAt(point, Vec3(expected.x + 0.5, expected.y.toDouble(), expected.z + 3.5), expected)
+}
+
+/**
+ * The same, aimed from a chosen place, for what cannot be seen from in front.
+ *
+ * Track lies flat along the bottom of its block, so a piece of it has to be looked down on from one
+ * side. Aimed at head-on the line of sight passes over the near piece entirely and lands on the next
+ * one along, which is a different piece of track and a different answer.
+ */
+internal suspend fun rightClickAt(point: Vec3, from: Vec3, expected: BlockPos) {
+    standAt(from, point, settle = 10)
     requireLookingAt(expected)
 
     client(ALEX) {
