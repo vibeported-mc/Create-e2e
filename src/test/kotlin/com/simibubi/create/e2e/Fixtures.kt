@@ -11,7 +11,9 @@ import dev.vibeported.mc.driver.server
 import dev.vibeported.mc.driver.setUiLayer
 import dev.vibeported.mc.driver.useBlock
 import dev.vibeported.mc.driver.whileGamesLive
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import net.minecraft.core.BlockPos
 import net.minecraft.world.phys.Vec3
@@ -71,7 +73,55 @@ internal fun ClusterScope.driving(
     // `whileGamesLive` is what makes a crash arrive promptly. Without it the body simply stops
     // getting answers -- its next call is to a game that has gone -- and the test spends its whole
     // deadline waiting before anything says why. With it, the crash is the failure.
-    whileGamesLive { withTimeout(within) { body() } }
+    var leftOpen: String? = null
+    try {
+        whileGamesLive {
+            withTimeout(within) {
+                aCleanSlate()
+                body()
+            }
+        }
+
+        // Only asked of a test that got through. One that failed has a real failure to report and
+        // whatever it left on screen is a consequence of that, not a finding of its own.
+        leftOpen = openScreenName()
+    } finally {
+        // Outside `whileGamesLive` and outside the deadline on purpose. A test that timed out or
+        // whose game died is cancelled, and a suspending call made from the `finally` of a
+        // cancelled coroutine is refused before it is sent -- which is exactly the case where
+        // something is most likely to be left standing. `runCatching` because a client that has
+        // died cannot be tidied up and that is not this test's failure to report either.
+        withContext(NonCancellable) { runCatching { closeAnyScreen() } }
+    }
+
+    // Left as a failure of the test that did it rather than of whichever test runs next and finds
+    // its first click eaten. That failure names the wrong test and says nothing about why.
+    if (leftOpen != null) {
+        throw AssertionError(
+            "The test finished with $leftOpen still on screen. A screen left open is the next " +
+                "test's problem, so close it where it was opened."
+        )
+    }
+}
+
+/**
+ * What every test is handed before it starts.
+ *
+ * These tests share one world and one client, so each of them inherits whatever the last one left
+ * behind -- and the two things that carry over both present as something else entirely. A screen
+ * still standing eats the next test's first click, which reads as a screen that never opened; a
+ * hidden heads-up display and a world at night make every screenshot from then on a picture of
+ * something other than what was meant.
+ *
+ * So the slate is wiped here rather than left to each test to remember at its end, where a test that
+ * fails never reaches it.
+ */
+private suspend fun aCleanSlate() {
+    runCommand("time set day")
+
+    setUiLayer(ALEX, UiLayer.GUI, true)
+
+    closeAnyScreen()
 }
 
 /**
@@ -119,6 +169,10 @@ internal object Zones {
     const val TOOLBOX: Int = 2464
     const val CLIPBOARD: Int = 2496
     const val BLUEPRINT: Int = 2528
+    const val RADIAL_WRENCH: Int = 2560
+    const val GOGGLE_CONFIG: Int = 2592
+    const val WORLDSHAPER: Int = 2624
+    const val SCHEMATIC_EDIT: Int = 2656
 }
 
 /**
@@ -246,10 +300,32 @@ internal suspend fun standAt(from: Vec3, at: Vec3, settle: Int = 40) {
     awaitCamera(from, settle)
 }
 
+/**
+ * Puts the player at [from], looking at [at].
+ *
+ * The angles are worked out here rather than handed to `/tp ... facing`, and that is not a
+ * preference. The command aims from the entity's *position* -- its feet -- while what has to be
+ * pointed at the target is the eye, a block and a half higher. Far away that is a fraction of a
+ * degree and nothing notices; at the two or three blocks a screen test stands from what it is
+ * clicking it is thirty degrees, and the crosshair sails over the block entirely.
+ *
+ * Which is why the originals did the trigonometry by hand against `getEyePosition`. This is that,
+ * with the eye height read off the server since only it knows how tall the player currently is.
+ */
 private suspend fun teleportFacing(from: Vec3, at: Vec3) {
+    val eyeHeight = server(ALEX) { name -> playerNamed(name).eyeHeight.toDouble() }
+
+    val dx = at.x - from.x
+    val dy = at.y - (from.y + eyeHeight)
+    val dz = at.z - from.z
+    val flat = kotlin.math.sqrt(dx * dx + dz * dz)
+
+    val yaw = Math.toDegrees(kotlin.math.atan2(dz, dx)) - 90.0
+    val pitch = -Math.toDegrees(kotlin.math.atan2(dy, flat))
+
     runCommand(
-        "tp %s %.2f %.2f %.2f facing %.2f %.2f %.2f"
-            .format(Locale.ROOT, ALEX, from.x, from.y, from.z, at.x, at.y, at.z)
+        "tp %s %.3f %.3f %.3f %.3f %.3f"
+            .format(Locale.ROOT, ALEX, from.x, from.y, from.z, yaw, pitch)
     )
 }
 
@@ -313,6 +389,18 @@ internal suspend fun holdItem(item: String, count: Int = 1) {
  * thousand blocks is refused outright, without saying so.
  */
 internal suspend fun clearGround(centre: BlockPos, radius: Int, height: Int = radius + 1) {
+    // The player goes first, and this is the one thing every scene here has to get right. A
+    // dedicated server keeps loaded only the chunks somebody is near: a `/setblock` into an empty
+    // one places a block that does not stay resident, and a player teleported into one falls through
+    // the terrain before it arrives -- landing on the natural surface, several blocks under the
+    // scene, looking at grass. Both failures name something else entirely ("there is no display link
+    // at ...", "the screen never opened"), which is why this is here rather than left to callers to
+    // remember.
+    spectateAt(
+        Vec3(centre.x + 0.5, centre.y + 4.0, centre.z + 6.0),
+        Vec3.atCenterOf(centre),
+    )
+
     runCommand(
         "fill ${centre.x - radius} ${centre.y - 1} ${centre.z - radius} " +
             "${centre.x + radius} ${centre.y + height} ${centre.z + radius} air"

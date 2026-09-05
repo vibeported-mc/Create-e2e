@@ -9,15 +9,20 @@ import dev.vibeported.mc.driver.client
 import dev.vibeported.mc.driver.currentScreen
 import dev.vibeported.mc.driver.keyDown
 import dev.vibeported.mc.driver.keyUp
+import dev.vibeported.mc.driver.mouseDown
+import dev.vibeported.mc.driver.mouseUp
 import dev.vibeported.mc.driver.moveMouseTo
 import dev.vibeported.mc.driver.press
 import dev.vibeported.mc.driver.scroll
+import dev.vibeported.mc.driver.type
 import kotlinx.serialization.Serializable
 import net.minecraft.client.gui.components.AbstractWidget
 import net.minecraft.client.gui.screens.Screen
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen
+import net.minecraft.core.BlockPos
 import net.minecraft.core.registries.BuiltInRegistries
 import net.minecraft.resources.Identifier
+import net.minecraft.world.phys.Vec3
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.withTimeout
 import kotlin.time.Duration
@@ -99,6 +104,8 @@ internal suspend fun whereThePlayerIs(): String = client(ALEX) {
 
     val feet = player.blockPosition()
     "player at ${"%.2f, %.2f, %.2f".format(player.x, player.y, player.z)}" +
+        " looking ${"yaw %.1f pitch %.1f".format(player.yRot, player.xRot)}" +
+        " as ${minecraft.gameMode?.playerMode}" +
         " (feet in ${level.getBlockState(feet).block.descriptionId}," +
         " head in ${level.getBlockState(feet.above()).block.descriptionId}," +
         " below ${level.getBlockState(feet.below()).block.descriptionId})" +
@@ -108,6 +115,32 @@ internal suspend fun whereThePlayerIs(): String = client(ALEX) {
 internal suspend fun openScreenName(): String? = client(ALEX) { currentScreen() }
 
 internal suspend fun screenIsOpen(): Boolean = openScreenName() != null
+
+/**
+ * Closes whatever screen is showing, and does nothing at all when none is.
+ *
+ * Escape is only ever sent at a screen that is really there. Sent at nothing it opens the game menu
+ * -- which is itself a screen, so a blind escape does not tidy anything up, it leaves the next test
+ * staring at the pause menu. That is what a test with an uncertain screen has to use.
+ */
+internal suspend fun closeAnyScreen() {
+    client(ALEX) {
+        repeat(ESCAPES) {
+            if (minecraft.gui.screen() == null) return@client
+            press(Key.ESCAPE)
+            awaitTicks(BEAT_TICKS)
+        }
+
+        // Something that will not take the hint -- taken away rather than left in the way.
+        if (minecraft.gui.screen() != null) {
+            minecraft.gui.setScreen(null)
+            awaitTicks(BEAT_TICKS)
+        }
+    }
+}
+
+/** How many times a screen is asked politely before it is simply removed. */
+private const val ESCAPES = 3
 
 internal suspend fun closeWithEscape() {
     client(ALEX) {
@@ -234,6 +267,158 @@ internal suspend fun clickGui(x: Double, y: Double) {
         awaitTicks(BEAT_TICKS)
     }
 }
+
+/**
+ * Right-clicks a precise spot of a block rather than its middle.
+ *
+ * For the blocks that keep more than one thing behind a single face: a factory gauge holds four
+ * panels in one, and the middle of the face is the corner where all four meet. Aiming at the same
+ * quarter twice is what puts a panel there and then opens that same one.
+ */
+internal suspend fun rightClickAt(point: Vec3, expected: BlockPos) {
+    standAt(Vec3(expected.x + 0.5, expected.y.toDouble(), expected.z + 3.5), point, settle = 10)
+    requireLookingAt(expected)
+
+    client(ALEX) {
+        // The first click after a screen closes is spent grabbing the mouse rather than reaching the
+        // world, so the grab is taken here instead of costing the click.
+        if (minecraft.gui.screen() == null && !minecraft.mouseHandler.isMouseGrabbed) {
+            minecraft.mouseHandler.grabMouse()
+            awaitTicks()
+        }
+        click(MouseButton.RIGHT)
+        awaitTicks(BEAT_TICKS)
+    }
+}
+
+/**
+ * Holds the right button down on a precise spot of a block, rather than clicking it.
+ *
+ * How a block's value board is summoned: it appears only once the button has been held for a few
+ * ticks, and what it sets is decided by where the cursor rests when the button is let go. So this
+ * presses and holds, and [releaseRightClick] is what commits.
+ *
+ * Aimed at a point rather than at the block's middle, because the box that opens the board is drawn
+ * on one face and the middle of the block is not on it.
+ */
+internal suspend fun holdRightClickAt(point: Vec3, expected: BlockPos) {
+    standAt(Vec3(expected.x + 0.5, expected.y.toDouble(), expected.z + 3.5), point, settle = 10)
+    requireLookingAt(expected)
+
+    client(ALEX) {
+        // What `useBlock` does before its own click: the first click after a screen closes is spent
+        // grabbing the mouse rather than reaching the world.
+        if (minecraft.gui.screen() == null && !minecraft.mouseHandler.isMouseGrabbed) {
+            minecraft.mouseHandler.grabMouse()
+            awaitTicks()
+        }
+        mouseDown(MouseButton.RIGHT)
+        awaitTicks(BEAT_TICKS)
+    }
+}
+
+/**
+ * Stands in front of a block looking at it, without clicking.
+ *
+ * For the screens that are opened by something other than a click on the block -- a keybind, say --
+ * but which still care what the crosshair is resting on when it happens.
+ */
+internal suspend fun standLookingAt(pos: BlockPos) {
+    standAt(Vec3(pos.x + 0.5, pos.y.toDouble(), pos.z + 3.5), Vec3.atCenterOf(pos), settle = 10)
+    requireLookingAt(pos)
+}
+
+/**
+ * Right-clicks whatever is standing at [pos] rather than the block there.
+ *
+ * The check is the whole of it: a seat with somebody on it and a seat with nobody on it are the same
+ * block, and a click that lands on the block instead sits the player down rather than opening the
+ * screen -- which fails a good deal later and says nothing about why.
+ */
+internal suspend fun rightClickEntityAt(pos: BlockPos) {
+    standAt(Vec3(pos.x + 0.5, pos.y.toDouble(), pos.z + 3.5), Vec3.atCenterOf(pos), settle = 10)
+
+    val looking = client(ALEX) {
+        minecraft.hitResult?.type?.name ?: "MISS"
+    }
+    if (looking != "ENTITY") {
+        throw AssertionError(
+            "The player was put in front of $pos but is looking at $looking, not an entity. " +
+                whereThePlayerIs()
+        )
+    }
+
+    client(ALEX) {
+        if (minecraft.gui.screen() == null && !minecraft.mouseHandler.isMouseGrabbed) {
+            minecraft.mouseHandler.grabMouse()
+            awaitTicks()
+        }
+        click(MouseButton.RIGHT)
+        awaitTicks(BEAT_TICKS)
+    }
+}
+
+/** Types into whatever the open screen is editing. */
+internal suspend fun typeText(text: String) {
+    client(ALEX, text) { what ->
+        type(what)
+        awaitTicks(BEAT_TICKS)
+    }
+}
+
+/** Presses a key by its GLFW code, for the bindings a test has to set up itself. */
+internal suspend fun pressKeyCode(code: Int) {
+    client(ALEX, code) { key ->
+        press(Key(key))
+        awaitTicks(BEAT_TICKS)
+    }
+}
+
+/** Lets go of the right button, which is what commits whatever was being dragged out. */
+internal suspend fun releaseRightClick() {
+    client(ALEX) {
+        mouseUp(MouseButton.RIGHT)
+        awaitTicks(BEAT_TICKS)
+    }
+}
+
+/**
+ * Fails unless the crosshair is really on the block that was aimed at.
+ *
+ * A click that lands on the wrong block does something plausible and wrong, which is worse to debug
+ * than one that lands on nothing -- so the aim is checked before the button is pressed.
+ */
+internal suspend fun requireLookingAt(expected: BlockPos) {
+    val looking = client(ALEX, expected) { wanted ->
+        val hit = minecraft.hitResult
+        hit is net.minecraft.world.phys.BlockHitResult &&
+            hit.type != net.minecraft.world.phys.HitResult.Type.MISS &&
+            hit.blockPos == wanted
+    }
+
+    if (!looking) throw AssertionError("The crosshair is not on $expected. ${whereThePlayerIs()}")
+}
+
+/** A point in the screen's own coordinates, as a screen's own layout reports one. */
+@Serializable
+internal data class Point(val x: Double, val y: Double)
+
+/**
+ * The result of asking the open screen where something of its own is.
+ *
+ * For the screens that lay themselves out and can say so -- a value board knows where each of its
+ * steps is drawn, and dragging to a place it named beats working one out here.
+ */
+internal suspend fun screenPoint(method: String, a: Int, b: Int): Point =
+    client(ALEX, method, a, b) { named, first, second ->
+        val coordinate = invokeOn(openScreen(), named, first, second)
+            ?: throw AssertionError("$named returned nothing")
+
+        Point(
+            (readField(coordinate, "x") as Number).toDouble(),
+            (readField(coordinate, "y") as Number).toDouble(),
+        )
+    }
 
 /**
  * The gesture that opens a held item's own screen: the sneak key held down, then a right-click.
