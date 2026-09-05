@@ -62,6 +62,13 @@ class ItemLogisticsTest {
 
         setFilter(loadingFunnel(BRASS_LANE), ALLOWED)
 
+        // Last of all, and the one piece of ordering the original did not need. There, the whole
+        // scene went up inside a tick or two of local calls; here every block is a round trip and
+        // the server keeps ticking between them, so a smart chute standing under a full chest with
+        // no filter yet has seconds to help itself. Loading the chests only once every filter is set
+        // leaves nothing for anything to carry until the scene means it.
+        for (lane in LANES) loadSources(lane)
+
         serverTicks(20)
         shot("item_logistics_before")
 
@@ -69,6 +76,18 @@ class ItemLogisticsTest {
 
         shot("item_logistics_after")
         restoreHud()
+
+        // Before the assertions, since the first one to fail hides the rest and the useful thing to
+        // know about a lane that ran out of time is how far the others had got.
+        println(
+            "item logistics after $waited ticks: " +
+                "chute=${countIn(chuteDestination(CHUTE_LANE), ALLOWED)}, " +
+                "smart=${countIn(chuteDestination(SMART_CHUTE_LANE), ALLOWED)}, " +
+                "andesite=${countIn(unloadingChest(ANDESITE_LANE), ALLOWED)}, " +
+                "brass=${countIn(unloadingChest(BRASS_LANE), ALLOWED)}; " +
+                "left in smart source=${countIn(chuteSource(SMART_CHUTE_LANE), ALLOWED)}, " +
+                "on the floor=${onTheFloor(SMART_CHUTE_LANE)}"
+        )
 
         // Neither the plain chute nor the andesite funnels take a view on what they are carrying.
         for (item in CARGO) {
@@ -89,11 +108,11 @@ class ItemLogisticsTest {
         // The two that filter should have taken the copper and left the rest where it was.
         assertEquals(
             COUNT, countIn(chuteDestination(SMART_CHUTE_LANE), ALLOWED),
-            "The smart chute did not pass what its filter allows",
+            "The smart chute did not pass what its filter allows within $waited ticks",
         )
         assertEquals(
             COUNT, countIn(unloadingChest(BRASS_LANE), ALLOWED),
-            "The brass funnel did not put what its filter allows onto the belt",
+            "The brass funnel did not put what its filter allows onto the belt within $waited ticks",
         )
 
         for (item in CARGO) {
@@ -118,6 +137,14 @@ class ItemLogisticsTest {
         }
     }
 
+    /** Loose item entities around a lane, which is where anything a chute failed to catch ends up. */
+    private suspend fun onTheFloor(z: Int): Int = server(BlockPos(BELT_RUN, BELT_Y, z)) { where ->
+        serverLevel.getEntitiesOfClass(
+            net.minecraft.world.entity.item.ItemEntity::class.java,
+            net.minecraft.world.phys.AABB(where).inflate(6.0),
+        ).sumOf { it.item.count }
+    }
+
     private suspend fun everythingArrived(): Boolean {
         for (item in CARGO) {
             if (countIn(chuteDestination(CHUTE_LANE), item) < COUNT) return false
@@ -140,21 +167,31 @@ class ItemLogisticsTest {
     /**
      * A chest emptying through a chute onto the near end of the belt, and a chute under the far end
      * catching what rides off it into a second chest.
+     *
+     * The catcher is a smart chute where the original used a plain one, and that is a change to the
+     * scene rather than to the port. A plain chute takes sixteen items a cycle
+     * (`ChuteBlockEntity.getExtractionAmount`) while a smart one takes what its filter allows, which
+     * on a fresh filter is sixty-four. The loading smart chute therefore drops all thirty-two copper
+     * onto the belt in one go, the plain catcher took sixteen of them, and the rest spilled on the
+     * floor -- so the lane delivered exactly half and the test failed on a mismatch between two
+     * chutes rather than on anything it means to check.
      */
     private suspend fun buildChuteEnds(z: Int, chute: String) {
         setBlock(chutePos(z), chute)
         setBlock(chuteSource(z), "minecraft:chest")
-        setBlock(BlockPos(BELT_RUN, BELT_Y - 1, z), "create:chute[facing=down,shape=normal]")
+        setBlock(BlockPos(BELT_RUN, BELT_Y - 1, z), "create:smart_chute")
         setBlock(chuteDestination(z), "minecraft:chest")
-
-        load(chuteSource(z))
     }
 
     /** The chests the two funnels of a lane serve. */
     private suspend fun buildFunnelChests(z: Int) {
         setBlock(loadingChest(z), "minecraft:chest")
         setBlock(unloadingChest(z), "minecraft:chest")
-        load(loadingChest(z))
+    }
+
+    /** Fills whichever chest starts this lane, once everything downstream is ready for it. */
+    private suspend fun loadSources(z: Int) {
+        load(if (z == CHUTE_LANE || z == SMART_CHUTE_LANE) chuteSource(z) else loadingChest(z))
     }
 
     /**
@@ -223,6 +260,14 @@ class ItemLogisticsTest {
 
         const val COUNT = 32
 
+        /**
+         * The original's, unchanged: the scene finishes in about 880.
+         *
+         * It was briefly raised to 3000 while this lane was failing at exactly half, on the guess
+         * that it was merely slow. It was not -- a plain chute was spilling what a smart one handed
+         * it -- and the longer wait changed nothing, which is worth remembering the next time a
+         * count stops short of what was sent. A number that stalls is not a number that is late.
+         */
         const val PATIENCE_TICKS = 1200
 
         const val BELT_SPEED = 64
