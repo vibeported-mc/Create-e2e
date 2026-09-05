@@ -80,17 +80,17 @@ internal class Scene(
 
     /** A picture of this machine, taken by the client that is watching it. */
     suspend fun shot(name: String) {
-        shot(watcher, name)
+        ground.shot(name)
     }
 
     /** The heads-up display back on, after a camera move hid it for a picture. */
     suspend fun restoreHud() {
-        restoreHud(watcher)
+        ground.restoreHud()
     }
 
     /** Watches [at] from [from], with this scene's own client. */
     suspend fun spectateAt(from: Vec3, at: Vec3, settle: Int = 60) {
-        spectateAt(watcher, from, at, settle)
+        ground.spectateAt(from, at, settle)
     }
 }
 
@@ -112,7 +112,6 @@ internal suspend fun Stage.scene(group: String, name: String): Scene {
     val watcher = client()
 
     spectateAt(
-        watcher,
         Vec3(origin.x + 20.0, origin.y + 16.0, origin.z + 20.0),
         Vec3(origin.x + 8.0, origin.y + 4.0, origin.z + 8.0),
     )

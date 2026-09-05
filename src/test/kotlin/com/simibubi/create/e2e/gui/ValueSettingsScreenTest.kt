@@ -2,10 +2,6 @@ package com.simibubi.create.e2e.gui
 
 import com.simibubi.create.content.kinetics.speedController.SpeedControllerBlockEntity
 import com.simibubi.create.foundation.blockEntity.behaviour.ValueSettingsScreen
-import com.simibubi.create.e2e.ALEX
-import com.simibubi.create.e2e.Zones
-import com.simibubi.create.e2e.clearGround
-import com.simibubi.create.e2e.driving
 import com.simibubi.create.e2e.holdRightClickAt
 import com.simibubi.create.e2e.hoverGui
 import com.simibubi.create.e2e.releaseRightClick
@@ -16,9 +12,13 @@ import com.simibubi.create.e2e.setBlock
 import com.simibubi.create.e2e.shot
 import com.simibubi.create.e2e.waitForNoScreen
 import com.simibubi.create.e2e.waitForScreenNamed
+import com.simibubi.create.e2e.watcher
+import com.simibubi.create.e2e.clearGround
 import dev.vibeported.mc.driver.ClusterScope
+import dev.vibeported.mc.driver.Stage
 import dev.vibeported.mc.driver.client
 import dev.vibeported.mc.driver.junit.DrivesMinecraft
+import dev.vibeported.mc.driver.junit.stage
 import dev.vibeported.mc.driver.server
 import net.minecraft.core.BlockPos
 import net.minecraft.world.phys.Vec3
@@ -44,9 +44,12 @@ class ValueSettingsScreenTest {
 
     @Test
     @DisplayName("The value dragged out on a block's board is the value the block is left set to")
-    fun `drags out a value`(cluster: ClusterScope) = cluster.driving {
-        clearGround(controller(), 4)
+    fun `drags out a value`(cluster: ClusterScope) = cluster.stage {
+        // A client of this test's own, which every helper below reaches through the stage.
+        theClient()
 
+
+        clearGround(controller(), 4)
         // Laid along x, which is what puts its little box on the side facing the player.
         setBlock(controller(), "create:rotation_speed_controller[axis=x]")
         serverTicks(SETTLE_TICKS)
@@ -65,7 +68,7 @@ class ValueSettingsScreenTest {
         // than to a place worked out here. Asked of the screen directly inside a client body: the
         // screen cannot cross a wire but a body runs where it lives, so it can hold the real thing
         // and call a real method on it. Only the two numbers come back.
-        val target = client(ALEX, COLUMN) { column ->
+        val target = client(watcher, COLUMN) { column ->
             val board = minecraft.gui.screen() as ValueSettingsScreen
             val coordinate = board.getCoordinateOfValue(0, column)
             Point(coordinate.x.toDouble(), coordinate.y.toDouble())
@@ -85,13 +88,13 @@ class ValueSettingsScreenTest {
         )
     }
 
-    private suspend fun speed(): Int = server(controller()) { pos ->
+    private suspend fun Stage.speed(): Int = server(controller()) { pos ->
         val be = serverLevel.getBlockEntity(pos) as? SpeedControllerBlockEntity
             ?: throw AssertionError("There is no speed controller at $pos")
         be.targetSpeed.value
     }
 
-    private fun controller() = BlockPos(60, -58, ZONE)
+    private fun Stage.controller() = at(0, 1, 0)
 
     /**
      * Where the little box is drawn on the block, which is the only place the board can be summoned
@@ -100,7 +103,7 @@ class ValueSettingsScreenTest {
      * Near the top of the face and just outside it, so the crosshair lands on the box rather than
      * passing through into the block behind.
      */
-    private fun valueBox() = Vec3(
+    private fun Stage.valueBox() = Vec3(
         controller().x + 0.5,
         controller().y + 11 / 16.0,
         controller().z + 0.97,
@@ -108,7 +111,6 @@ class ValueSettingsScreenTest {
 
     private companion object {
 
-        const val ZONE = Zones.VALUE_SETTINGS
 
         const val SETTLE_TICKS = 10
 

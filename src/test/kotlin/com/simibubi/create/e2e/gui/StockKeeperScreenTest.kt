@@ -2,10 +2,7 @@ package com.simibubi.create.e2e.gui
 
 import com.simibubi.create.content.contraptions.actors.seat.SeatBlock
 import com.simibubi.create.content.contraptions.actors.seat.SeatEntity
-import com.simibubi.create.e2e.Zones
-import com.simibubi.create.e2e.clearGround
 import com.simibubi.create.e2e.closeWithEscape
-import com.simibubi.create.e2e.driving
 import com.simibubi.create.e2e.holdItem
 import com.simibubi.create.e2e.restoreHud
 import com.simibubi.create.e2e.rightClickBlock
@@ -15,8 +12,11 @@ import com.simibubi.create.e2e.serverTicks
 import com.simibubi.create.e2e.setBlock
 import com.simibubi.create.e2e.shot
 import com.simibubi.create.e2e.waitForScreenNamed
+import com.simibubi.create.e2e.clearGround
 import dev.vibeported.mc.driver.ClusterScope
+import dev.vibeported.mc.driver.Stage
 import dev.vibeported.mc.driver.junit.DrivesMinecraft
+import dev.vibeported.mc.driver.junit.stage
 import dev.vibeported.mc.driver.server
 import net.minecraft.core.BlockPos
 import net.minecraft.world.entity.Mob
@@ -43,7 +43,10 @@ class StockKeeperScreenTest {
 
     @Test
     @DisplayName("A stock ticker with somebody minding it opens the categories its stock is sorted into")
-    fun `opens the categories`(cluster: ClusterScope) = cluster.driving {
+    fun `opens the categories`(cluster: ClusterScope) = cluster.stage {
+        // A client of this test's own, which every helper below reaches through the stage.
+        theClient()
+
         build()
 
         rightClickBlock(ticker())
@@ -57,7 +60,10 @@ class StockKeeperScreenTest {
 
     @Test
     @DisplayName("Walking up to the keeper of a stock ticker opens the counter to order from")
-    fun `opens the counter`(cluster: ClusterScope) = cluster.driving {
+    fun `opens the counter`(cluster: ClusterScope) = cluster.stage {
+        // A client of this test's own, which every helper below reaches through the stage.
+        theClient()
+
         build()
 
         // The keeper rather than the block: the same shop, from the other side of the counter.
@@ -71,9 +77,9 @@ class StockKeeperScreenTest {
     }
 
     /** A ticker with a seat beside it and something sitting on the seat to mind the shop. */
-    private suspend fun build() {
-        clearGround(ticker(), 5)
+    private suspend fun Stage.build() {
 
+        clearGround(ticker(), 5)
         setBlock(ticker(), "create:stock_ticker[facing=south]")
         setBlock(seat(), "create:red_seat")
 
@@ -94,30 +100,29 @@ class StockKeeperScreenTest {
         assertTrue(seatTaken(), "Nothing sat down on the seat, so the shop has no keeper")
     }
 
-    private suspend fun somebodyAlready(): Boolean = server(seat()) { pos ->
+    private suspend fun Stage.somebodyAlready(): Boolean = server(seat()) { pos ->
         serverLevel.getEntitiesOfClass(Mob::class.java, AABB(pos).inflate(4.0)).isNotEmpty()
     }
 
     /** Returns how many sat down, since a body that answers nothing has nothing to report. */
-    private suspend fun sitEverybodyDown(): Int = server(seat()) { pos ->
+    private suspend fun Stage.sitEverybodyDown(): Int = server(seat()) { pos ->
         val nearby = serverLevel.getEntitiesOfClass(Mob::class.java, AABB(pos).inflate(4.0))
         for (mob in nearby) SeatBlock.sitDown(serverLevel, pos, mob)
         nearby.size
     }
 
-    private suspend fun seatTaken(): Boolean = server(seat()) { pos ->
+    private suspend fun Stage.seatTaken(): Boolean = server(seat()) { pos ->
         serverLevel.getEntitiesOfClass(SeatEntity::class.java, AABB(pos).inflate(1.0))
             .any { it.isVehicle }
     }
 
-    private fun ticker() = BlockPos(60, -58, ZONE)
+    private fun Stage.ticker() = at(0, 1, 0)
 
     /** Beside the ticker, which is as near as a keeper has to be. */
-    private fun seat() = ticker().east()
+    private fun Stage.seat() = ticker().east()
 
     private companion object {
 
-        const val ZONE = Zones.STOCK_KEEPER
 
         const val SETTLE_TICKS = 10
 

@@ -1,12 +1,8 @@
 package com.simibubi.create.e2e.gui
 
 import com.simibubi.create.AllDataComponents
-import com.simibubi.create.e2e.ALEX
-import com.simibubi.create.e2e.Zones
-import com.simibubi.create.e2e.clearGround
 import com.simibubi.create.e2e.clickSlot
 import com.simibubi.create.e2e.clickWidget
-import com.simibubi.create.e2e.driving
 import com.simibubi.create.e2e.holdItem
 import com.simibubi.create.e2e.rightClickAhead
 import com.simibubi.create.e2e.runCommand
@@ -17,8 +13,12 @@ import com.simibubi.create.e2e.standAt
 import com.simibubi.create.e2e.typeText
 import com.simibubi.create.e2e.waitForNoScreen
 import com.simibubi.create.e2e.waitForScreenNamed
+import com.simibubi.create.e2e.watcher
+import com.simibubi.create.e2e.clearGround
 import dev.vibeported.mc.driver.ClusterScope
+import dev.vibeported.mc.driver.Stage
 import dev.vibeported.mc.driver.junit.DrivesMinecraft
+import dev.vibeported.mc.driver.junit.stage
 import dev.vibeported.mc.driver.server
 import net.minecraft.core.BlockPos
 import net.minecraft.core.registries.BuiltInRegistries
@@ -46,7 +46,10 @@ class FilterScreenTest {
 
     @Test
     @DisplayName("A filter keeps the item it was given and the list mode it was set to")
-    fun `keeps its item and mode`(cluster: ClusterScope) = cluster.driving {
+    fun `keeps its item and mode`(cluster: ClusterScope) = cluster.stage {
+        // A client of this test's own, which every helper below reaches through the stage.
+        theClient()
+
         openWith("create:filter", "FilterScreen")
         shot("filter_opened")
 
@@ -76,7 +79,10 @@ class FilterScreenTest {
 
     @Test
     @DisplayName("A filter set to ignore data says so on the item")
-    fun `keeps whether it respects data`(cluster: ClusterScope) = cluster.driving {
+    fun `keeps whether it respects data`(cluster: ClusterScope) = cluster.stage {
+        // A client of this test's own, which every helper below reaches through the stage.
+        theClient()
+
         openWith("create:filter", "FilterScreen")
 
         // Something has to be in the list, since a filter with nothing in it is taken back off the item.
@@ -94,7 +100,10 @@ class FilterScreenTest {
 
     @Test
     @DisplayName("The attribute filter opens on its own item and closes onto it")
-    fun `the attribute filter opens`(cluster: ClusterScope) = cluster.driving {
+    fun `the attribute filter opens`(cluster: ClusterScope) = cluster.stage {
+        // A client of this test's own, which every helper below reaches through the stage.
+        theClient()
+
         openWith("create:attribute_filter", "AttributeFilterScreen")
         shot("attribute_filter_opened")
 
@@ -110,7 +119,10 @@ class FilterScreenTest {
 
     @Test
     @DisplayName("The package filter takes an address and keeps it")
-    fun `the package filter keeps its address`(cluster: ClusterScope) = cluster.driving {
+    fun `the package filter keeps its address`(cluster: ClusterScope) = cluster.stage {
+        // A client of this test's own, which every helper below reaches through the stage.
+        theClient()
+
         openWith("create:package_filter", "PackageFilterScreen")
 
         typeText(ADDRESS)
@@ -133,7 +145,7 @@ class FilterScreenTest {
      * player who has fallen into unloaded terrain has no click to give -- and that failure reads as
      * a screen that never opened, which says nothing.
      */
-    private suspend fun openWith(item: String, screen: String) {
+    private suspend fun Stage.openWith(item: String, screen: String) {
         clearGround(here(), 4)
         standAt(
             Vec3(here().x + 0.5, here().y.toDouble(), here().z + 0.5),
@@ -141,7 +153,7 @@ class FilterScreenTest {
         )
 
         holdItem(item)
-        runCommand("item replace entity $ALEX hotbar.1 with minecraft:cobblestone 1")
+        runCommand("item replace entity $watcher hotbar.1 with minecraft:cobblestone 1")
         serverTicks(SETTLE_TICKS)
 
         // A filter opens on a plain right-click, and does nothing at all on a sneaking one.
@@ -151,7 +163,7 @@ class FilterScreenTest {
     }
 
     /** Accepts the screen, which is what closes the menu and sends what was set to the server. */
-    private suspend fun close() {
+    private suspend fun Stage.close() {
         clickWidget("confirmButton")
         waitForNoScreen()
         serverTicks(SETTLE_TICKS)
@@ -164,28 +176,28 @@ class FilterScreenTest {
      * registry object and cannot cross a wire, and the answers -- a flag, a name -- can.
      */
 
-    private suspend fun hasFilterList(): Boolean = server(ALEX) { name ->
+    private suspend fun Stage.hasFilterList(): Boolean = server(watcher) { name ->
         playerNamed(name).mainHandItem.has(AllDataComponents.FILTER_ITEMS)
     }
 
-    private suspend fun blacklisted(): Boolean? = server(ALEX) { name ->
+    private suspend fun Stage.blacklisted(): Boolean? = server(watcher) { name ->
         playerNamed(name).mainHandItem.get(AllDataComponents.FILTER_ITEMS_BLACKLIST)
     }
 
-    private suspend fun respectsData(): Boolean? = server(ALEX) { name ->
+    private suspend fun Stage.respectsData(): Boolean? = server(watcher) { name ->
         playerNamed(name).mainHandItem.get(AllDataComponents.FILTER_ITEMS_RESPECT_NBT)
     }
 
-    private suspend fun hasAttributeMode(): Boolean = server(ALEX) { name ->
+    private suspend fun Stage.hasAttributeMode(): Boolean = server(watcher) { name ->
         playerNamed(name).mainHandItem.has(AllDataComponents.ATTRIBUTE_FILTER_WHITELIST_MODE)
     }
 
-    private suspend fun address(): String? = server(ALEX) { name ->
+    private suspend fun Stage.address(): String? = server(watcher) { name ->
         playerNamed(name).mainHandItem.get(AllDataComponents.PACKAGE_ADDRESS)
     }
 
     /** The first item the filter was left holding, as its registry name. */
-    private suspend fun firstFiltered(): String = server(ALEX) { name ->
+    private suspend fun Stage.firstFiltered(): String = server(watcher) { name ->
         val contents = playerNamed(name).mainHandItem.get(AllDataComponents.FILTER_ITEMS)
             ?: return@server "minecraft:air"
 
@@ -195,11 +207,10 @@ class FilterScreenTest {
             ?: "minecraft:air"
     }
 
-    private fun here() = BlockPos(60, -58, ZONE)
+    private fun Stage.here() = at(0, 1, 0)
 
     private companion object {
 
-        const val ZONE = Zones.FILTER
 
         /** Long enough for the server to be asked for a menu and to answer. */
         const val SETTLE_TICKS = 10

@@ -1,9 +1,7 @@
 package com.simibubi.create.e2e.gui
 
 import com.simibubi.create.AllDataComponents
-import com.simibubi.create.e2e.ALEX
 import com.simibubi.create.e2e.clickWidget
-import com.simibubi.create.e2e.driving
 import com.simibubi.create.e2e.holdItem
 import com.simibubi.create.e2e.restoreHud
 import com.simibubi.create.e2e.screenFieldClass
@@ -14,9 +12,12 @@ import com.simibubi.create.e2e.sneakRightClick
 import com.simibubi.create.e2e.waitForNoScreen
 import com.simibubi.create.e2e.waitForScreenNamed
 import com.simibubi.create.e2e.widget
+import com.simibubi.create.e2e.watcher
 import dev.vibeported.mc.driver.ClusterScope
+import dev.vibeported.mc.driver.Stage
 import dev.vibeported.mc.driver.client
 import dev.vibeported.mc.driver.junit.DrivesMinecraft
+import dev.vibeported.mc.driver.junit.stage
 import dev.vibeported.mc.driver.server
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNotNull
@@ -49,7 +50,10 @@ class SymmetryWandScreenTest {
 
     @Test
     @DisplayName("The mirror the symmetry wand's screen was set to reaches the wand on the server")
-    fun `configures the mirror`(cluster: ClusterScope) = cluster.driving {
+    fun `configures the mirror`(cluster: ClusterScope) = cluster.stage {
+        // A client of this test's own, which every helper below reaches through the stage.
+        theClient()
+
         holdItem("create:wand_of_symmetry")
         serverTicks(SETTLE_TICKS)
 
@@ -65,7 +69,7 @@ class SymmetryWandScreenTest {
 
         // Picking a mirror builds a new one, so this is read after the scrolling rather than before.
         val shownKind = screenFieldClass("currentElement")
-        val shownOrientation = client(ALEX) {
+        val shownOrientation = client(watcher) {
             val mirror = com.simibubi.create.e2e.readField(
                 minecraft.gui.screen(), "currentElement",
             ) as com.simibubi.create.content.equipment.symmetryWand.mirror.SymmetryMirror
@@ -91,11 +95,11 @@ class SymmetryWandScreenTest {
     }
 
     /** The kind of mirror on the wand in the player's hand, on the server, where the wand really lives. */
-    private suspend fun heldKind(): String? = server(ALEX) { name ->
+    private suspend fun Stage.heldKind(): String? = server(watcher) { name ->
         playerNamed(name).mainHandItem.get(AllDataComponents.SYMMETRY_WAND)?.javaClass?.name
     }
 
-    private suspend fun heldOrientation(): Int = server(ALEX) { name ->
+    private suspend fun Stage.heldOrientation(): Int = server(watcher) { name ->
         playerNamed(name).mainHandItem.get(AllDataComponents.SYMMETRY_WAND)?.orientationIndex ?: -1
     }
 

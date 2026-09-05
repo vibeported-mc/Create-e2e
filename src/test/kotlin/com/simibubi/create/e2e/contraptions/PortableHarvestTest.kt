@@ -3,17 +3,18 @@ package com.simibubi.create.e2e.contraptions
 import com.simibubi.create.content.contraptions.AbstractContraptionEntity
 import com.simibubi.create.content.contraptions.glue.SuperGlueEntity
 import com.simibubi.create.content.kinetics.motor.CreativeMotorBlockEntity
-import com.simibubi.create.e2e.Zones
 import com.simibubi.create.e2e.clearBox
-import com.simibubi.create.e2e.driving
 import com.simibubi.create.e2e.restoreHud
 import com.simibubi.create.e2e.serverTicks
 import com.simibubi.create.e2e.setBlock
 import com.simibubi.create.e2e.shot
 import com.simibubi.create.e2e.spectateAt
 import com.simibubi.create.e2e.waitForTicks
+import com.simibubi.create.e2e.watcher
 import dev.vibeported.mc.driver.ClusterScope
+import dev.vibeported.mc.driver.Stage
 import dev.vibeported.mc.driver.junit.DrivesMinecraft
+import dev.vibeported.mc.driver.junit.stage
 import dev.vibeported.mc.driver.server
 import net.minecraft.core.BlockPos
 import net.minecraft.core.registries.BuiltInRegistries
@@ -48,7 +49,10 @@ class PortableHarvestTest {
 
     @Test
     @DisplayName("A harvester carried round on a bearing reaps a ring of wheat into a chest")
-    fun `reaps the ring into the chest`(cluster: ClusterScope) = cluster.driving {
+    fun `reaps the ring into the chest`(cluster: ClusterScope) = cluster.stage {
+        // A client of this test's own, which every helper below reaches through the stage.
+        theClient()
+
         watchTheBearing()
         clearTheGround()
         build()
@@ -66,11 +70,13 @@ class PortableHarvestTest {
         assertTrue(contraptionAssembled(), "The bearing did not assemble anything at all")
         assertTrue(
             joinedTheContraption(harvester()),
-            "The harvester did not join the contraption, so the glue did not hold",
+            "The harvester did not join the contraption, so the glue did not hold. " +
+                "The blocks along the arm are " + alongTheArm(),
         )
         assertTrue(
             joinedTheContraption(carriedPort()),
-            "The interface did not join the contraption, so the glue did not reach it",
+            "The interface did not join the contraption, so the glue did not reach it. " +
+                "The blocks along the arm are " + alongTheArm(),
         )
 
         val waited = waitForTicks(PATIENCE_TICKS) {
@@ -91,7 +97,7 @@ class PortableHarvestTest {
         )
     }
 
-    private suspend fun build() {
+    private suspend fun Stage.build() {
         setBlock(bearing(), "create:mechanical_bearing[facing=up]")
         setBlock(bearingMotor(), "create:creative_motor[facing=up]")
 
@@ -104,12 +110,12 @@ class PortableHarvestTest {
 
         // The one fixed interface, with a chute under it to draw what arrives down into the chest.
         setBlock(fixedPort(), "create:portable_storage_interface[facing=north]")
-        setBlock(BlockPos(0, AXLE_Y, ZONE + 4), "create:chute[facing=down,shape=normal]")
+        setBlock(at(4, (AXLE_Y) + 59, ZONE + 4), "create:chute[facing=down,shape=normal]")
         setBlock(outputChest(), "minecraft:chest")
 
         for (square in CROP_RING) {
-            setBlock(BlockPos(square[0], AXLE_Y, ZONE + square[1]), "minecraft:farmland[moisture=7]")
-            setBlock(BlockPos(square[0], AXLE_Y + 1, ZONE + square[1]), "minecraft:wheat[age=7]")
+            setBlock(at(square[0] + 4, (AXLE_Y) + 59, ZONE + square[1]), "minecraft:farmland[moisture=7]")
+            setBlock(at(square[0] + 4, (AXLE_Y + 1) + 59, ZONE + square[1]), "minecraft:wheat[age=7]")
         }
     }
 
@@ -120,59 +126,79 @@ class PortableHarvestTest {
      * that has only started growing. What tells a cut square from an uncut one is how far grown it
      * is, not whether anything is there.
      */
-    private suspend fun ripeCrops(): Int = server(AXLE_Y + 1, ZONE) { y, zone ->
+    private suspend fun Stage.ripeCrops(): Int = server(at(4, (AXLE_Y + 1) + 59, 0)) { middle ->
         var ripe = 0
 
+        // The middle of the ring is worked out here and handed over, rather than each square being
+        // placed inside the body: a body runs in another process and may not reach for the stage it
+        // was written beside.
         for (square in CROP_RING) {
-            val state = serverLevel.getBlockState(BlockPos(square[0], y, zone + square[1]))
+            val state = serverLevel.getBlockState(middle.offset(square[0], 0, square[1]))
             if (state.`is`(Blocks.WHEAT) && state.getValue(CropBlock.AGE) == CropBlock.MAX_AGE) ripe++
         }
 
         ripe
     }
 
-    private suspend fun contraptionAssembled(): Boolean = server(bearing()) { pos ->
+    private suspend fun Stage.contraptionAssembled(): Boolean = server(bearing()) { pos ->
         serverLevel.getEntitiesOfClass(AbstractContraptionEntity::class.java, AABB(pos).inflate(6.0))
             .isNotEmpty()
     }
 
     /** Whether the block that was here has been taken up into the contraption. */
-    private suspend fun joinedTheContraption(pos: BlockPos): Boolean =
+    private suspend fun Stage.joinedTheContraption(pos: BlockPos): Boolean =
         server(pos) { where -> serverLevel.getBlockState(where).isAir }
 
-    private suspend fun countIn(pos: BlockPos, item: String): Int =
+    private suspend fun Stage.countIn(pos: BlockPos, item: String): Int =
         server(pos, item) { where, what -> countInContainer(serverLevel, where, what) }
 
-    private suspend fun clearTheGround() {
-        clearBox(BlockPos(-4, AXLE_Y - 2, ZONE - 6), BlockPos(4, AXLE_Y + 4, ZONE + 6))
+    private suspend fun Stage.clearTheGround() {
+        clearBox(at(0, (AXLE_Y - 2) + 59, ZONE - 6), at(8, (AXLE_Y + 4) + 59, ZONE + 6))
     }
 
-    private suspend fun watchTheBearing() {
+    private suspend fun Stage.watchTheBearing() {
         spectateAt(
-            Vec3(11.0, (AXLE_Y + 5).toDouble(), ZONE + 2.0),
-            Vec3(0.0, (AXLE_Y + 1).toDouble(), ZONE + 1.0),
+            Vec3.atLowerCornerOf(at(15, (AXLE_Y + 5) + 59, ZONE + 2)),
+            Vec3.atLowerCornerOf(at(4, (AXLE_Y + 1) + 59, ZONE + 1)),
         )
     }
 
-    private fun bearing() = BlockPos(0, AXLE_Y, ZONE)
+    private fun Stage.bearing() = at(4, (AXLE_Y) + 59, ZONE)
 
-    private fun bearingMotor() = BlockPos(0, AXLE_Y - 1, ZONE)
+    private fun Stage.bearingMotor() = at(4, (AXLE_Y - 1) + 59, ZONE)
 
-    private fun carriedChest() = BlockPos(0, AXLE_Y + 1, ZONE)
+    private fun Stage.carriedChest() = at(4, (AXLE_Y + 1) + 59, ZONE)
 
     /** One block out from the bearing, so its circle passes over every square of the ring. */
-    private fun harvester() = BlockPos(1, AXLE_Y + 1, ZONE)
+    private fun Stage.harvester() = at(5, (AXLE_Y + 1) + 59, ZONE)
 
-    private fun carriedPort() = BlockPos(2, AXLE_Y + 1, ZONE)
+    /** What is standing along the glued arm, which is the difference between two silent falses. */
+    private suspend fun Stage.alongTheArm(): String = server(carriedChest(), carriedPort()) { from, to ->
+        Lines(
+            net.minecraft.core.BlockPos.betweenClosed(from, to).map { where ->
+                where.toShortString() + "=" +
+                    net.minecraft.core.registries.BuiltInRegistries.BLOCK
+                        .getKey(serverLevel.getBlockState(where).block)
+            }
+        )
+    }.values.joinToString(", ")
+
+    @kotlinx.serialization.Serializable
+    private data class Lines(val values: List<String>)
+
+    private fun Stage.carriedPort() = at(6, (AXLE_Y + 1) + 59, ZONE)
 
     /** Two blocks out from where the turning interface comes to rest, leaving a block of air between. */
-    private fun fixedPort() = BlockPos(0, AXLE_Y + 1, ZONE + 4)
+    private fun Stage.fixedPort() = at(4, (AXLE_Y + 1) + 59, ZONE + 4)
 
-    private fun outputChest() = BlockPos(0, AXLE_Y - 1, ZONE + 4)
+    private fun Stage.outputChest() = at(4, (AXLE_Y - 1) + 59, ZONE + 4)
 
     private companion object {
 
-        const val ZONE = Zones.PORTABLE_HARVEST
+        /** The class's own strip of the shared world, which is now the stage's own corner. */
+        const val ZONE = 0
+
+
 
         /** The height the bearing turns at, with the crop growing at the height of the harvester. */
         const val AXLE_Y = -58

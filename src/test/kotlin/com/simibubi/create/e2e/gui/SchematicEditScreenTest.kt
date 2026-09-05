@@ -1,12 +1,8 @@
 package com.simibubi.create.e2e.gui
 
 import com.simibubi.create.AllDataComponents
-import com.simibubi.create.e2e.ALEX
-import com.simibubi.create.e2e.Zones
-import com.simibubi.create.e2e.clearGround
 import com.simibubi.create.e2e.clickWidget
 import com.simibubi.create.e2e.closeWithEscape
-import com.simibubi.create.e2e.driving
 import com.simibubi.create.e2e.holdItem
 import com.simibubi.create.e2e.openScreen
 import com.simibubi.create.e2e.readField
@@ -23,9 +19,13 @@ import com.simibubi.create.e2e.standAt
 import com.simibubi.create.e2e.waitForNoScreen
 import com.simibubi.create.e2e.waitForScreenNamed
 import com.simibubi.create.e2e.widget
+import com.simibubi.create.e2e.watcher
+import com.simibubi.create.e2e.clearGround
 import dev.vibeported.mc.driver.ClusterScope
+import dev.vibeported.mc.driver.Stage
 import dev.vibeported.mc.driver.client
 import dev.vibeported.mc.driver.junit.DrivesMinecraft
+import dev.vibeported.mc.driver.junit.stage
 import dev.vibeported.mc.driver.server
 import net.minecraft.client.gui.components.EditBox
 import net.minecraft.core.BlockPos
@@ -59,7 +59,10 @@ class SchematicEditScreenTest {
 
     @Test
     @DisplayName("The placement set on a schematic's screen reaches the schematic on the server")
-    fun `configures the placement`(cluster: ClusterScope) = cluster.driving {
+    fun `configures the placement`(cluster: ClusterScope) = cluster.stage {
+        // A client of this test's own, which every helper below reaches through the stage.
+        theClient()
+
         // Somewhere settled to stand: the anchor the screen offers is the player's own position, so a
         // player still falling would be asked about a place they are about to leave.
         clearGround(firstCorner(), 6)
@@ -72,10 +75,10 @@ class SchematicEditScreenTest {
         // bounds to place anything within, and without a name it does not take the schematic as the
         // active one.
         runCommand(
-            "item replace entity $ALEX hotbar.0 with " +
+            "item replace entity $watcher hotbar.0 with " +
                 "create:schematic[create:schematic_file=\"gametest.nbt\",create:schematic_bounds=[I;3,3,3]]"
         )
-        client(ALEX) {
+        client(watcher) {
             clientPlayer?.inventory?.setSelectedSlot(0)
             awaitTicks(1)
         }
@@ -120,8 +123,10 @@ class SchematicEditScreenTest {
 
     @Test
     @DisplayName("Marking out two corners with the quill asks for a name to save them under")
-    fun `prompts for a name once both corners are set`(cluster: ClusterScope) = cluster.driving {
-        clearGround(firstCorner(), 6)
+    fun `prompts for a name once both corners are set`(cluster: ClusterScope) = cluster.stage {
+        // A client of this test's own, which every helper below reaches through the stage.
+        theClient()
+
 
         // Two blocks stood up off the ground, so that each corner can be aimed at squarely. Aimed at
         // along the floor instead, the crosshair lands on whichever square happens to be nearest.
@@ -150,7 +155,7 @@ class SchematicEditScreenTest {
     }
 
     /** The three coordinate boxes, read as the position they spell out. */
-    private suspend fun anchorShownOnScreen(): BlockPos = client(ALEX) {
+    private suspend fun Stage.anchorShownOnScreen(): BlockPos = client(watcher) {
         val screen = openScreen()
 
         fun coordinate(field: String) = (readField(screen, field) as EditBox).value.toInt()
@@ -160,30 +165,29 @@ class SchematicEditScreenTest {
 
     /* What the schematic in the player's hand carries, on the server. */
 
-    private suspend fun heldRotation(): Rotation = server(ALEX) { name ->
+    private suspend fun Stage.heldRotation(): Rotation = server(watcher) { name ->
         playerNamed(name).mainHandItem.getOrDefault(AllDataComponents.SCHEMATIC_ROTATION, Rotation.NONE)
     }
 
-    private suspend fun heldMirror(): Mirror = server(ALEX) { name ->
+    private suspend fun Stage.heldMirror(): Mirror = server(watcher) { name ->
         playerNamed(name).mainHandItem.getOrDefault(AllDataComponents.SCHEMATIC_MIRROR, Mirror.NONE)
     }
 
-    private suspend fun heldAnchor(): BlockPos = server(ALEX) { name ->
+    private suspend fun Stage.heldAnchor(): BlockPos = server(watcher) { name ->
         playerNamed(name).mainHandItem.getOrDefault(AllDataComponents.SCHEMATIC_ANCHOR, BlockPos.ZERO)
     }
 
-    private suspend fun heldDeployed(): Boolean = server(ALEX) { name ->
+    private suspend fun Stage.heldDeployed(): Boolean = server(watcher) { name ->
         playerNamed(name).mainHandItem.getOrDefault(AllDataComponents.SCHEMATIC_DEPLOYED, false)
     }
 
     /** Two blocks a few apart, which is what the quill boxes in between. */
-    private fun firstCorner() = BlockPos(58, -58, ZONE)
+    private fun Stage.firstCorner() = at(0, 1, 0)
 
-    private fun secondCorner() = firstCorner().east(4)
+    private fun Stage.secondCorner() = firstCorner().east(4)
 
     private companion object {
 
-        const val ZONE = Zones.SCHEMATIC_EDIT
 
         const val SETTLE_TICKS = 10
 

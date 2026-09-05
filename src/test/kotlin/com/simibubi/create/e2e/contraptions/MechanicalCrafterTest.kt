@@ -4,9 +4,6 @@ import com.simibubi.create.AllBlocks
 import com.simibubi.create.content.kinetics.base.HorizontalKineticBlock
 import com.simibubi.create.content.kinetics.crafter.MechanicalCrafterBlock
 import com.simibubi.create.content.kinetics.motor.CreativeMotorBlockEntity
-import com.simibubi.create.e2e.Zones
-import com.simibubi.create.e2e.clearGround
-import com.simibubi.create.e2e.driving
 import com.simibubi.create.e2e.holdItem
 import com.simibubi.create.e2e.restoreHud
 import com.simibubi.create.e2e.rightClickBlock
@@ -15,8 +12,12 @@ import com.simibubi.create.e2e.setBlock
 import com.simibubi.create.e2e.shot
 import com.simibubi.create.e2e.spectateAt
 import com.simibubi.create.e2e.waitForTicks
+import com.simibubi.create.e2e.watcher
+import com.simibubi.create.e2e.clearGround
 import dev.vibeported.mc.driver.ClusterScope
+import dev.vibeported.mc.driver.Stage
 import dev.vibeported.mc.driver.junit.DrivesMinecraft
+import dev.vibeported.mc.driver.junit.stage
 import dev.vibeported.mc.driver.server
 import net.createmod.catnip.api.math.Pointing
 import net.minecraft.core.BlockPos
@@ -49,7 +50,10 @@ class MechanicalCrafterTest {
 
     @Test
     @DisplayName("A wall of mechanical crafters assembles a pair of crushing wheels")
-    fun `assembles a crushing wheel`(cluster: ClusterScope) = cluster.driving(within = 10.minutes) {
+    fun `assembles a crushing wheel`(cluster: ClusterScope) = cluster.stage(within = 10.minutes) {
+        // A client of this test's own, which every helper below reaches through the stage.
+        theClient()
+
         clearGround(output().below(), 10)
         build()
         settle()
@@ -79,7 +83,7 @@ class MechanicalCrafterTest {
     }
 
     /** The wall itself, the chest under its bottom crafter, and the cogwheel that turns the lot. */
-    private suspend fun build() {
+    private suspend fun Stage.build() {
         // One call for all three arrows, since working one out means asking the game to build a
         // crafter's blockstate and that can only be done where Create's registries are filled.
         val pointing = server(FACING.serializedName) { facing -> arrowsFor(facing) }
@@ -111,7 +115,7 @@ class MechanicalCrafterTest {
     }
 
     /** One item into each crafter, in hand and clicked onto its face, the way a player fills a wall. */
-    private suspend fun fill() {
+    private suspend fun Stage.fill() {
         for (row in PATTERN.indices) {
             for (column in PATTERN[row].indices) {
                 val ingredient = PATTERN[row][column]
@@ -140,13 +144,13 @@ class MechanicalCrafterTest {
      * Everything falls down its own column; the bottom of each column then turns inwards towards the
      * middle one, and the middle one hands down out of the wall, which is what makes it the way out.
      */
-    private fun passesTo(pos: BlockPos): Direction {
+    private fun Stage.passesTo(pos: BlockPos): Direction {
         if (pos == output()) return Direction.DOWN
         if (hasCrafterAt(pos.below())) return Direction.DOWN
         return if (pos.x < output().x) Direction.EAST else Direction.WEST
     }
 
-    private fun hasCrafterAt(pos: BlockPos): Boolean {
+    private fun Stage.hasCrafterAt(pos: BlockPos): Boolean {
         for (row in PATTERN.indices)
             for (column in PATTERN[row].indices)
                 if (PATTERN[row][column] != ' ' && cell(row, column) == pos) return true
@@ -155,7 +159,7 @@ class MechanicalCrafterTest {
     }
 
     /** How many crushing wheels ended up in the chest under the wall. */
-    private suspend fun wheelsMade(): Int = server(output().below()) { pos ->
+    private suspend fun Stage.wheelsMade(): Int = server(output().below()) { pos ->
         val chest = serverLevel.getBlockEntity(pos) as? Container ?: return@server 0
 
         var found = 0
@@ -167,7 +171,7 @@ class MechanicalCrafterTest {
     }
 
     /** Stands back far enough to see the whole wall. */
-    private suspend fun watchTheWall() {
+    private suspend fun Stage.watchTheWall() {
         spectateAt(
             Vec3(output().x + 0.5, output().y + 1.0, output().z + 8.0),
             Vec3.atCenterOf(cell(2, 2)),
@@ -175,21 +179,21 @@ class MechanicalCrafterTest {
     }
 
     /** Where a square of the pattern stands, with the first row at the top of the wall. */
-    private fun cell(row: Int, column: Int) = BlockPos(
+    private fun Stage.cell(row: Int, column: Int) = BlockPos(
         output().x - 2 + column,
         output().y + PATTERN.size - 1 - row,
         output().z,
     )
 
     /** The crafter at the bottom middle, which is the one that hands the finished wheels out. */
-    private fun output() = BlockPos(60, -57, ZONE)
+    private fun Stage.output() = at(3, 2, 0)
 
     /** Meshing with the crafter at the edge of the wall, level with its middle row. */
-    private fun cog() = BlockPos(57, -55, ZONE)
+    private fun Stage.cog() = at(0, 4, 0)
 
-    private fun motor() = cog().south()
+    private fun Stage.motor() = cog().south()
 
-    private suspend fun settle() = serverTicks(SETTLE_TICKS)
+    private suspend fun Stage.settle() = serverTicks(SETTLE_TICKS)
 
     /**
      * The three arrows this wall uses, worked out on the server.
@@ -203,7 +207,6 @@ class MechanicalCrafterTest {
 
     private companion object {
 
-        const val ZONE = Zones.MECHANICAL_CRAFTER
 
         const val SETTLE_TICKS = 10
 

@@ -1,5 +1,6 @@
 package com.simibubi.create.e2e
 
+import dev.vibeported.mc.driver.Stage
 import dev.vibeported.mc.driver.Key
 import dev.vibeported.mc.driver.MouseButton
 import dev.vibeported.mc.driver.awaitNoScreen
@@ -67,9 +68,9 @@ private const val BEAT_TICKS = 2
  * -- with nothing to say afterwards but a timeout. A deadline here turns that into "the screen never
  * opened; this was open instead", which names the problem.
  */
-internal suspend fun waitForScreenNamed(name: String, within: Duration = 30.seconds) {
+internal suspend fun Stage.waitForScreenNamed(name: String, within: Duration = 30.seconds) {
     try {
-        withTimeout(within) { client(ALEX, name) { wanted -> awaitScreen(wanted) } }
+        withTimeout(within) { client(watcher, name) { wanted -> awaitScreen(wanted) } }
     } catch (timedOut: TimeoutCancellationException) {
         throw AssertionError(
             "`$name` never opened within $within -- the screen showing is ${openScreenName() ?: "none"}.\n" +
@@ -87,7 +88,7 @@ internal suspend fun waitForScreenNamed(name: String, within: Duration = 30.seco
  * somewhere unexpected, the crosshair is on air, or it is on the wrong block -- and they look
  * identical from the outside.
  */
-internal suspend fun whereThePlayerIs(): String = client(ALEX) {
+internal suspend fun Stage.whereThePlayerIs(): String = client(watcher) {
     val player = clientPlayer ?: return@client "there is no player on this client"
 
     val hit = minecraft.hitResult
@@ -112,9 +113,9 @@ internal suspend fun whereThePlayerIs(): String = client(ALEX) {
         ", crosshair on $aimedAt"
 }
 
-internal suspend fun openScreenName(): String? = client(ALEX) { currentScreen() }
+internal suspend fun Stage.openScreenName(): String? = client(watcher) { currentScreen() }
 
-internal suspend fun screenIsOpen(): Boolean = openScreenName() != null
+internal suspend fun Stage.screenIsOpen(): Boolean = openScreenName() != null
 
 /**
  * Closes whatever screen is showing, and does nothing at all when none is.
@@ -123,8 +124,8 @@ internal suspend fun screenIsOpen(): Boolean = openScreenName() != null
  * -- which is itself a screen, so a blind escape does not tidy anything up, it leaves the next test
  * staring at the pause menu. That is what a test with an uncertain screen has to use.
  */
-internal suspend fun closeAnyScreen() {
-    client(ALEX) {
+internal suspend fun Stage.closeAnyScreen() {
+    client(watcher) {
         repeat(ESCAPES) {
             if (minecraft.gui.screen() == null) return@client
             press(Key.ESCAPE)
@@ -142,15 +143,15 @@ internal suspend fun closeAnyScreen() {
 /** How many times a screen is asked politely before it is simply removed. */
 private const val ESCAPES = 3
 
-internal suspend fun closeWithEscape() {
-    client(ALEX) {
+internal suspend fun Stage.closeWithEscape() {
+    client(watcher) {
         press(Key.ESCAPE)
         awaitNoScreen()
     }
 }
 
-internal suspend fun waitForNoScreen() {
-    client(ALEX) { awaitNoScreen() }
+internal suspend fun Stage.waitForNoScreen() {
+    client(watcher) { awaitNoScreen() }
 }
 
 // -- finding controls ---------------------------------------------------------------------------
@@ -162,12 +163,12 @@ internal suspend fun waitForNoScreen() {
  * widget, fails on the client with the screen's own class in the message -- which is the only place
  * that information exists.
  */
-internal suspend fun widget(field: String): Bounds =
-    client(ALEX, field) { named -> boundsOf(readField(openScreen(), named), named) }
+internal suspend fun Stage.widget(field: String): Bounds =
+    client(watcher, field) { named -> boundsOf(readField(openScreen(), named), named) }
 
 /** One of a list of widgets: a row of buttons, or the brush parameters. */
-internal suspend fun widget(field: String, index: Int): Bounds =
-    client(ALEX, field, index) { named, which ->
+internal suspend fun Stage.widget(field: String, index: Int): Bounds =
+    client(watcher, field, index) { named, which ->
         val held = readField(openScreen(), named)
         val widgets = held as? List<*>
             ?: throw AssertionError("$named is not a list of widgets but a ${held.javaClass}")
@@ -180,8 +181,8 @@ internal suspend fun widget(field: String, index: Int): Bounds =
     }
 
 /** One of a grid of widgets: a list of rows, each a list of controls, as the sequencer keeps them. */
-internal suspend fun widget(field: String, row: Int, column: Int): Bounds =
-    client(ALEX, field, row, column) { named, r, c -> boundsOf(nested(openScreen(), named, r, c), named) }
+internal suspend fun Stage.widget(field: String, row: Int, column: Int): Bounds =
+    client(watcher, field, row, column) { named, r, c -> boundsOf(nested(openScreen(), named, r, c), named) }
 
 /**
  * What a scroll input is showing.
@@ -189,19 +190,19 @@ internal suspend fun widget(field: String, row: Int, column: Int): Bounds =
  * Held against what the block was left with, so a test says the two agree rather than naming a number
  * that depends on where the control started and how far a notch moves it.
  */
-internal suspend fun scrollState(field: String): Int =
-    client(ALEX, field) { named -> stateOf(readField(openScreen(), named), named) }
+internal suspend fun Stage.scrollState(field: String): Int =
+    client(watcher, field) { named -> stateOf(readField(openScreen(), named), named) }
 
-internal suspend fun scrollState(field: String, row: Int, column: Int): Int =
-    client(ALEX, field, row, column) { named, r, c -> stateOf(nested(openScreen(), named, r, c), named) }
+internal suspend fun Stage.scrollState(field: String, row: Int, column: Int): Int =
+    client(watcher, field, row, column) { named, r, c -> stateOf(nested(openScreen(), named, r, c), named) }
 
 /** The value of one of the screen's own numbers, such as where it decided to put itself. */
-internal suspend fun screenNumber(field: String): Int =
-    client(ALEX, field) { named -> readField(openScreen(), named) as Int }
+internal suspend fun Stage.screenNumber(field: String): Int =
+    client(watcher, field) { named -> readField(openScreen(), named) as Int }
 
 /** The value of one of the screen's own strings, for the parts a test reads rather than clicks. */
-internal suspend fun screenText(field: String): String =
-    client(ALEX, field) { named -> readField(openScreen(), named).toString() }
+internal suspend fun Stage.screenText(field: String): String =
+    client(watcher, field) { named -> readField(openScreen(), named).toString() }
 
 /**
  * The class of whatever the screen keeps in this field.
@@ -209,21 +210,21 @@ internal suspend fun screenText(field: String): String =
  * For the objects a test compares but cannot move: which kind of mirror a wand ended up on, say. The
  * object stays where it is and its name travels instead.
  */
-internal suspend fun screenFieldClass(field: String): String =
-    client(ALEX, field) { named -> readField(openScreen(), named).javaClass.name }
+internal suspend fun Stage.screenFieldClass(field: String): String =
+    client(watcher, field) { named -> readField(openScreen(), named).javaClass.name }
 
 // -- driving them -------------------------------------------------------------------------------
 
-internal suspend fun clickWidget(bounds: Bounds) {
+internal suspend fun Stage.clickWidget(bounds: Bounds) {
     hoverWidget(bounds)
-    client(ALEX) {
+    client(watcher) {
         click(MouseButton.LEFT)
         awaitTicks(BEAT_TICKS)
     }
 }
 
 /** Clicks the control this field holds, which is the common case in one step. */
-internal suspend fun clickWidget(field: String) = clickWidget(widget(field))
+internal suspend fun Stage.clickWidget(field: String) = clickWidget(widget(field))
 
 /**
  * Turns the wheel over a widget, a notch at a time, since a scroll input moves one step to the notch.
@@ -232,9 +233,9 @@ internal suspend fun clickWidget(field: String) = clickWidget(widget(field))
  * the control's own business -- a list of options runs the other way to a number, so that in both
  * cases turning the wheel down goes down.
  */
-internal suspend fun scrollWidget(bounds: Bounds, notches: Int) {
+internal suspend fun Stage.scrollWidget(bounds: Bounds, notches: Int) {
     hoverWidget(bounds)
-    client(ALEX, notches) { turns ->
+    client(watcher, notches) { turns ->
         repeat(kotlin.math.abs(turns)) {
             scroll(kotlin.math.sign(turns.toDouble()))
             awaitTicks(BEAT_TICKS)
@@ -242,13 +243,13 @@ internal suspend fun scrollWidget(bounds: Bounds, notches: Int) {
     }
 }
 
-internal suspend fun scrollWidget(field: String, notches: Int) = scrollWidget(widget(field), notches)
+internal suspend fun Stage.scrollWidget(field: String, notches: Int) = scrollWidget(widget(field), notches)
 
-internal suspend fun hoverWidget(bounds: Bounds) = hoverGui(bounds.middleX.toDouble(), bounds.middleY.toDouble())
+internal suspend fun Stage.hoverWidget(bounds: Bounds) = hoverGui(bounds.middleX.toDouble(), bounds.middleY.toDouble())
 
 /** Moves the pointer to a point of the screen without clicking, for a board that is dragged across. */
-internal suspend fun hoverGui(x: Double, y: Double) {
-    client(ALEX, x, y) { gx, gy ->
+internal suspend fun Stage.hoverGui(x: Double, y: Double) {
+    client(watcher, x, y) { gx, gy ->
         moveMouseTo(guiToWindowX(gx), guiToWindowY(gy), Duration.ZERO)
         awaitTicks(BEAT_TICKS)
     }
@@ -260,9 +261,9 @@ internal suspend fun hoverGui(x: Double, y: Double) {
  * For the parts of a screen that are drawn and hit-tested by hand instead of being widgets at all --
  * the schedule's card list among them.
  */
-internal suspend fun clickGui(x: Double, y: Double) {
+internal suspend fun Stage.clickGui(x: Double, y: Double) {
     hoverGui(x, y)
-    client(ALEX) {
+    client(watcher) {
         click(MouseButton.LEFT)
         awaitTicks(BEAT_TICKS)
     }
@@ -275,7 +276,7 @@ internal suspend fun clickGui(x: Double, y: Double) {
  * panels in one, and the middle of the face is the corner where all four meet. Aiming at the same
  * quarter twice is what puts a panel there and then opens that same one.
  */
-internal suspend fun rightClickAt(point: Vec3, expected: BlockPos) {
+internal suspend fun Stage.rightClickAt(point: Vec3, expected: BlockPos) {
     rightClickAt(point, Vec3(expected.x + 0.5, expected.y.toDouble(), expected.z + 3.5), expected)
 }
 
@@ -286,11 +287,11 @@ internal suspend fun rightClickAt(point: Vec3, expected: BlockPos) {
  * side. Aimed at head-on the line of sight passes over the near piece entirely and lands on the next
  * one along, which is a different piece of track and a different answer.
  */
-internal suspend fun rightClickAt(point: Vec3, from: Vec3, expected: BlockPos) {
+internal suspend fun Stage.rightClickAt(point: Vec3, from: Vec3, expected: BlockPos) {
     standAt(from, point, settle = 10)
     requireLookingAt(expected)
 
-    client(ALEX) {
+    client(watcher) {
         // The first click after a screen closes is spent grabbing the mouse rather than reaching the
         // world, so the grab is taken here instead of costing the click.
         if (minecraft.gui.screen() == null && !minecraft.mouseHandler.isMouseGrabbed) {
@@ -312,11 +313,11 @@ internal suspend fun rightClickAt(point: Vec3, from: Vec3, expected: BlockPos) {
  * Aimed at a point rather than at the block's middle, because the box that opens the board is drawn
  * on one face and the middle of the block is not on it.
  */
-internal suspend fun holdRightClickAt(point: Vec3, expected: BlockPos) {
+internal suspend fun Stage.holdRightClickAt(point: Vec3, expected: BlockPos) {
     standAt(Vec3(expected.x + 0.5, expected.y.toDouble(), expected.z + 3.5), point, settle = 10)
     requireLookingAt(expected)
 
-    client(ALEX) {
+    client(watcher) {
         // What `useBlock` does before its own click: the first click after a screen closes is spent
         // grabbing the mouse rather than reaching the world.
         if (minecraft.gui.screen() == null && !minecraft.mouseHandler.isMouseGrabbed) {
@@ -334,7 +335,7 @@ internal suspend fun holdRightClickAt(point: Vec3, expected: BlockPos) {
  * For the screens that are opened by something other than a click on the block -- a keybind, say --
  * but which still care what the crosshair is resting on when it happens.
  */
-internal suspend fun standLookingAt(pos: BlockPos) {
+internal suspend fun Stage.standLookingAt(pos: BlockPos) {
     standAt(Vec3(pos.x + 0.5, pos.y.toDouble(), pos.z + 3.5), Vec3.atCenterOf(pos), settle = 10)
     requireLookingAt(pos)
 }
@@ -346,10 +347,10 @@ internal suspend fun standLookingAt(pos: BlockPos) {
  * block, and a click that lands on the block instead sits the player down rather than opening the
  * screen -- which fails a good deal later and says nothing about why.
  */
-internal suspend fun rightClickEntityAt(pos: BlockPos) {
+internal suspend fun Stage.rightClickEntityAt(pos: BlockPos) {
     standAt(Vec3(pos.x + 0.5, pos.y.toDouble(), pos.z + 3.5), Vec3.atCenterOf(pos), settle = 10)
 
-    val looking = client(ALEX) {
+    val looking = client(watcher) {
         minecraft.hitResult?.type?.name ?: "MISS"
     }
     if (looking != "ENTITY") {
@@ -359,7 +360,7 @@ internal suspend fun rightClickEntityAt(pos: BlockPos) {
         )
     }
 
-    client(ALEX) {
+    client(watcher) {
         if (minecraft.gui.screen() == null && !minecraft.mouseHandler.isMouseGrabbed) {
             minecraft.mouseHandler.grabMouse()
             awaitTicks()
@@ -370,24 +371,24 @@ internal suspend fun rightClickEntityAt(pos: BlockPos) {
 }
 
 /** Types into whatever the open screen is editing. */
-internal suspend fun typeText(text: String) {
-    client(ALEX, text) { what ->
+internal suspend fun Stage.typeText(text: String) {
+    client(watcher, text) { what ->
         type(what)
         awaitTicks(BEAT_TICKS)
     }
 }
 
 /** Presses a key by its GLFW code, for the bindings a test has to set up itself. */
-internal suspend fun pressKeyCode(code: Int) {
-    client(ALEX, code) { key ->
+internal suspend fun Stage.pressKeyCode(code: Int) {
+    client(watcher, code) { key ->
         press(Key(key))
         awaitTicks(BEAT_TICKS)
     }
 }
 
 /** Lets go of the right button, which is what commits whatever was being dragged out. */
-internal suspend fun releaseRightClick() {
-    client(ALEX) {
+internal suspend fun Stage.releaseRightClick() {
+    client(watcher) {
         mouseUp(MouseButton.RIGHT)
         awaitTicks(BEAT_TICKS)
     }
@@ -399,8 +400,8 @@ internal suspend fun releaseRightClick() {
  * A click that lands on the wrong block does something plausible and wrong, which is worse to debug
  * than one that lands on nothing -- so the aim is checked before the button is pressed.
  */
-internal suspend fun requireLookingAt(expected: BlockPos) {
-    val looking = client(ALEX, expected) { wanted ->
+internal suspend fun Stage.requireLookingAt(expected: BlockPos) {
+    val looking = client(watcher, expected) { wanted ->
         val hit = minecraft.hitResult
         hit is net.minecraft.world.phys.BlockHitResult &&
             hit.type != net.minecraft.world.phys.HitResult.Type.MISS &&
@@ -420,8 +421,8 @@ internal data class Point(val x: Double, val y: Double)
  * For the screens that lay themselves out and can say so -- a value board knows where each of its
  * steps is drawn, and dragging to a place it named beats working one out here.
  */
-internal suspend fun screenPoint(method: String, a: Int, b: Int): Point =
-    client(ALEX, method, a, b) { named, first, second ->
+internal suspend fun Stage.screenPoint(method: String, a: Int, b: Int): Point =
+    client(watcher, method, a, b) { named, first, second ->
         val coordinate = invokeOn(openScreen(), named, first, second)
             ?: throw AssertionError("$named returned nothing")
 
@@ -437,8 +438,8 @@ internal suspend fun screenPoint(method: String, a: Int, b: Int): Point =
  * The key has to be down for a tick or two first, since the screen only opens for a player the game
  * already considers to be sneaking rather than one who has only just pressed the key.
  */
-internal suspend fun sneakRightClick() {
-    client(ALEX) {
+internal suspend fun Stage.sneakRightClick() {
+    client(watcher) {
         keyDown(Key(minecraft.options.keyShift.key.value))
         awaitTicks(3)
         click(MouseButton.RIGHT)
@@ -456,7 +457,7 @@ internal suspend fun sneakRightClick() {
  * A slot is not a widget: a menu screen keeps its own list and draws them itself, so they are found
  * through the menu rather than among the screen's controls.
  */
-internal suspend fun slotBounds(index: Int): Bounds = client(ALEX, index) { which ->
+internal suspend fun Stage.slotBounds(index: Int): Bounds = client(watcher, index) { which ->
     val screen = menuScreen(openScreen())
     val slot = screen.menu.slots[which]
     Bounds(
@@ -467,7 +468,7 @@ internal suspend fun slotBounds(index: Int): Bounds = client(ALEX, index) { whic
 }
 
 /** What a slot of the open menu is showing, which for a ghost slot is what it was set to. */
-internal suspend fun itemInSlot(index: Int): String = client(ALEX, index) { which ->
+internal suspend fun Stage.itemInSlot(index: Int): String = client(watcher, index) { which ->
     val item = menuScreen(openScreen()).menu.slots[which].item.item
     BuiltInRegistries.ITEM.getKey(item).toString()
 }
@@ -476,7 +477,7 @@ internal suspend fun itemInSlot(index: Int): String = client(ALEX, index) { whic
  * The first slot of the open menu holding this item, so a test can say which item it means to pick up
  * rather than counting through a layout.
  */
-internal suspend fun slotHolding(item: String): Int = client(ALEX, item) { wanted ->
+internal suspend fun Stage.slotHolding(item: String): Int = client(watcher, item) { wanted ->
     val slots = menuScreen(openScreen()).menu.slots
     val looking = BuiltInRegistries.ITEM.getValue(Identifier.parse(wanted))
 
@@ -485,7 +486,7 @@ internal suspend fun slotHolding(item: String): Int = client(ALEX, item) { wante
         ?: throw AssertionError("No slot on this screen is holding $wanted")
 }
 
-internal suspend fun clickSlot(index: Int) = clickWidget(slotBounds(index))
+internal suspend fun Stage.clickSlot(index: Int) = clickWidget(slotBounds(index))
 
 // -- the client-side half, which every body above calls ------------------------------------------
 

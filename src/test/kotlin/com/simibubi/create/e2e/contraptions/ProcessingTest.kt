@@ -2,9 +2,7 @@ package com.simibubi.create.e2e.contraptions
 
 import com.simibubi.create.content.kinetics.belt.item.BeltConnectorItem
 import com.simibubi.create.content.kinetics.motor.CreativeMotorBlockEntity
-import com.simibubi.create.e2e.Zones
 import com.simibubi.create.e2e.clearBox
-import com.simibubi.create.e2e.driving
 import com.simibubi.create.e2e.give
 import com.simibubi.create.e2e.restoreHud
 import com.simibubi.create.e2e.serverTicks
@@ -13,8 +11,11 @@ import com.simibubi.create.e2e.shot
 import com.simibubi.create.e2e.spectateAt
 import com.simibubi.create.foundation.blockEntity.behaviour.BlockEntityBehaviour
 import com.simibubi.create.foundation.blockEntity.behaviour.filtering.FilteringBehaviour
+import com.simibubi.create.e2e.watcher
 import dev.vibeported.mc.driver.ClusterScope
+import dev.vibeported.mc.driver.Stage
 import dev.vibeported.mc.driver.junit.DrivesMinecraft
+import dev.vibeported.mc.driver.junit.stage
 import dev.vibeported.mc.driver.server
 import net.minecraft.core.BlockPos
 import net.minecraft.core.registries.BuiltInRegistries
@@ -47,7 +48,10 @@ class ProcessingTest {
 
     @Test
     @DisplayName("A press works the iron the belt brings it")
-    fun `presses what the belt brings`(cluster: ClusterScope) = cluster.driving {
+    fun `presses what the belt brings`(cluster: ClusterScope) = cluster.stage {
+        // A client of this test's own, which every helper below reaches through the stage.
+        theClient()
+
         watchTheLane()
         clearTheLane()
 
@@ -67,7 +71,10 @@ class ProcessingTest {
 
     @Test
     @DisplayName("A saw cuts the stone the belt brings it")
-    fun `saws what the belt brings`(cluster: ClusterScope) = cluster.driving {
+    fun `saws what the belt brings`(cluster: ClusterScope) = cluster.stage {
+        // A client of this test's own, which every helper below reaches through the stage.
+        theClient()
+
         watchTheLane()
         clearTheLane()
 
@@ -91,20 +98,20 @@ class ProcessingTest {
      * The press looks for what to work on two blocks below itself, which is what puts it a block
      * clear of the belt rather than resting on it.
      */
-    private suspend fun buildPress() {
+    private suspend fun Stage.buildPress() {
         layBeltFrom(0, 6)
         feed("minecraft:iron_ingot")
 
-        setBlock(BlockPos(3, BELT_Y + 2, LANE), "create:mechanical_press[facing=east]")
-        setBlock(BlockPos(2, BELT_Y + 2, LANE), "create:creative_motor[facing=east]")
+        setBlock(at(5, (BELT_Y + 2) + 59, LANE), "create:mechanical_press[facing=east]")
+        setBlock(at(4, (BELT_Y + 2) + 59, LANE), "create:creative_motor[facing=east]")
 
         // A funnel at the end takes what arrives one item at a time, and will not take another while
         // the chest below it is full -- which is what stops a belt rather than spilling off the end.
-        setBlock(BlockPos(7, BELT_Y, LANE), "create:andesite_funnel[facing=up]")
+        setBlock(at(9, (BELT_Y) + 59, LANE), "create:andesite_funnel[facing=up]")
         setBlock(pressOutput(), "minecraft:chest")
 
         connectBelt(0, 6)
-        turn(BlockPos(2, BELT_Y + 2, LANE), PRESS_RPM)
+        turn(at(4, (BELT_Y + 2) + 59, LANE), PRESS_RPM)
 
         loadOntoBelt()
     }
@@ -115,19 +122,19 @@ class ProcessingTest {
      * A saw only works on what it is given when it faces up, and it passes what it has cut to
      * whatever stands in the direction the item was already travelling.
      */
-    private suspend fun buildSaw() {
+    private suspend fun Stage.buildSaw() {
         layBeltFrom(0, 4)
         feed("minecraft:stone")
 
         // The blade has to run along the belt, not across it, or the saw hands what it cuts off
         // sideways into nothing. The property reads the other way round to its name -- the saw takes
         // its item movement from `!axis_along_first` -- so along the x the belt runs on is false.
-        setBlock(BlockPos(5, BELT_Y, LANE), "create:mechanical_saw[facing=up,axis_along_first=false]")
+        setBlock(at(7, (BELT_Y) + 59, LANE), "create:mechanical_saw[facing=up,axis_along_first=false]")
         // A saw facing up turns on the axis across its blade, so it is driven from the side rather
         // than from underneath.
         setBlock(sawMotor(), "create:creative_motor[facing=south]")
 
-        setBlock(BlockPos(6, BELT_Y, LANE), "create:andesite_funnel[facing=up]")
+        setBlock(at(8, (BELT_Y) + 59, LANE), "create:andesite_funnel[facing=up]")
         setBlock(sawOutput(), "minecraft:chest")
 
         connectBelt(0, 4)
@@ -135,7 +142,7 @@ class ProcessingTest {
 
         // Stone can be cut a dozen ways, so a saw left to itself has no reason to prefer one. The
         // filter is how a player says which, and without it the saw holds on to what it is given.
-        server(BlockPos(5, BELT_Y, LANE)) { pos ->
+        server(at(7, (BELT_Y) + 59, LANE)) { pos ->
             val filter = BlockEntityBehaviour.get(serverLevel, pos, FilteringBehaviour.TYPE)
                 ?: throw AssertionError("The saw has no filter to set")
             filter.setFilter(ItemStack(Items.STONE_SLAB))
@@ -145,14 +152,14 @@ class ProcessingTest {
     }
 
     /** The pulleys a belt runs between, and the motor that turns them. */
-    private suspend fun layBeltFrom(from: Int, to: Int) {
-        setBlock(BlockPos(from, BELT_Y, LANE), "create:shaft[axis=z]")
-        setBlock(BlockPos(to, BELT_Y, LANE), "create:shaft[axis=z]")
+    private suspend fun Stage.layBeltFrom(from: Int, to: Int) {
+        setBlock(at(from + 2, (BELT_Y) + 59, LANE), "create:shaft[axis=z]")
+        setBlock(at(to + 2, (BELT_Y) + 59, LANE), "create:shaft[axis=z]")
         setBlock(beltMotor(), "create:creative_motor[facing=south]")
     }
 
     /** The chest the run starts from, standing beside the belt rather than over it. */
-    private suspend fun feed(item: String) {
+    private suspend fun Stage.feed(item: String) {
         setBlock(source(), "minecraft:chest")
         give(source(), 0, item, COUNT)
     }
@@ -163,30 +170,30 @@ class ProcessingTest {
      * It stands on the belt with the chest beside it, and it only counts as a belt funnel at all
      * while there is a belt underneath -- so it goes down after the belt, not before.
      */
-    private suspend fun loadOntoBelt() {
+    private suspend fun Stage.loadOntoBelt() {
         setBlock(
-            BlockPos(0, BELT_Y + 1, LANE),
+            at(2, (BELT_Y + 1) + 59, LANE),
             "create:andesite_belt_funnel[facing=south,shape=pushing,powered=false]",
         )
     }
 
-    private suspend fun connectBelt(from: Int, to: Int) {
-        server(BlockPos(from, BELT_Y, LANE), BlockPos(to, BELT_Y, LANE)) { a, b ->
+    private suspend fun Stage.connectBelt(from: Int, to: Int) {
+        server(at(from + 2, (BELT_Y) + 59, LANE), at(to + 2, (BELT_Y) + 59, LANE)) { a, b ->
             BeltConnectorItem.createBelts(serverLevel, a, b)
         }
         // Away from the chute that feeds it, so what lands travels the length of the belt.
         turn(beltMotor(), -BELT_RPM)
     }
 
-    private suspend fun turn(motor: BlockPos, rpm: Int) {
+    private suspend fun Stage.turn(motor: BlockPos, rpm: Int) {
         server(motor, rpm) { pos, speed ->
             (serverLevel.getBlockEntity(pos) as CreativeMotorBlockEntity).generatedSpeed.setValue(speed)
         }
     }
 
     /** Takes the whole scene down, so the next machine is built on bare ground. */
-    private suspend fun clearTheLane() {
-        clearBox(BlockPos(-2, BELT_Y - 3, LANE - 2), BlockPos(8, BELT_Y + 4, LANE + 2))
+    private suspend fun Stage.clearTheLane() {
+        clearBox(at(0, (BELT_Y - 3) + 59, LANE - 2), at(10, (BELT_Y + 4) + 59, LANE + 2))
     }
 
     /**
@@ -195,7 +202,7 @@ class ProcessingTest {
      * Waiting for the chest the items came from to empty would not do: a chute drains a chest in a
      * second, long before what it dropped has ridden the belt and been worked on.
      */
-    private suspend fun waitFor(chest: BlockPos, expected: String): String {
+    private suspend fun Stage.waitFor(chest: BlockPos, expected: String): String {
         var waited = 0
         var holding = contentsOf(chest)
 
@@ -212,29 +219,32 @@ class ProcessingTest {
     }
 
     /** What a chest holds, as one line of item and count, which is what the test asserts against. */
-    private suspend fun contentsOf(pos: BlockPos): String = server(pos) { where -> listing(serverLevel, where) }
+    private suspend fun Stage.contentsOf(pos: BlockPos): String = server(pos) { where -> listing(serverLevel, where) }
 
-    private fun sawMotor() = BlockPos(5, BELT_Y, LANE - 1)
+    private fun Stage.sawMotor() = at(7, (BELT_Y) + 59, LANE - 1)
 
-    private fun beltMotor() = BlockPos(0, BELT_Y, LANE - 1)
+    private fun Stage.beltMotor() = at(2, (BELT_Y) + 59, LANE - 1)
 
-    private fun source() = BlockPos(0, BELT_Y + 1, LANE - 1)
+    private fun Stage.source() = at(2, (BELT_Y + 1) + 59, LANE - 1)
 
-    private fun pressOutput() = BlockPos(7, BELT_Y - 1, LANE)
+    private fun Stage.pressOutput() = at(9, (BELT_Y - 1) + 59, LANE)
 
-    private fun sawOutput() = BlockPos(6, BELT_Y - 1, LANE)
+    private fun Stage.sawOutput() = at(8, (BELT_Y - 1) + 59, LANE)
 
     /** Along the lane from one side, so the press standing over the belt is in view. */
-    private suspend fun watchTheLane() {
+    private suspend fun Stage.watchTheLane() {
         spectateAt(
-            Vec3(3.0, (BELT_Y + 4).toDouble(), LANE + 11.0),
-            Vec3(3.0, BELT_Y.toDouble(), LANE.toDouble()),
+            Vec3.atLowerCornerOf(at(5, (BELT_Y + 4) + 59, LANE + 11)),
+            Vec3.atLowerCornerOf(at(5, (BELT_Y) + 59, LANE)),
         )
     }
 
     private companion object {
 
-        const val ZONE = Zones.PROCESSING
+        /** The class's own strip of the shared world, which is now the stage's own corner. */
+        const val ZONE = 0
+
+
 
         const val GROUND = -60
 

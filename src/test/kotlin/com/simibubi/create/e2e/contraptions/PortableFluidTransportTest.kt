@@ -4,17 +4,18 @@ import com.simibubi.create.content.contraptions.AbstractContraptionEntity
 import com.simibubi.create.content.contraptions.glue.SuperGlueEntity
 import com.simibubi.create.content.fluids.tank.FluidTankBlockEntity
 import com.simibubi.create.content.kinetics.motor.CreativeMotorBlockEntity
-import com.simibubi.create.e2e.Zones
 import com.simibubi.create.e2e.clearBox
-import com.simibubi.create.e2e.driving
 import com.simibubi.create.e2e.restoreHud
 import com.simibubi.create.e2e.serverTicks
 import com.simibubi.create.e2e.setBlock
 import com.simibubi.create.e2e.shot
 import com.simibubi.create.e2e.spectateAt
 import com.simibubi.create.e2e.waitForTicks
+import com.simibubi.create.e2e.watcher
 import dev.vibeported.mc.driver.ClusterScope
+import dev.vibeported.mc.driver.Stage
 import dev.vibeported.mc.driver.junit.DrivesMinecraft
+import dev.vibeported.mc.driver.junit.stage
 import dev.vibeported.mc.driver.server
 import net.minecraft.core.BlockPos
 import net.minecraft.world.level.material.Fluids
@@ -50,7 +51,10 @@ class PortableFluidTransportTest {
 
     @Test
     @DisplayName("A turning contraption carries water from one tank to the other")
-    fun `carries water between tanks`(cluster: ClusterScope) = cluster.driving {
+    fun `carries water between tanks`(cluster: ClusterScope) = cluster.stage {
+        // A client of this test's own, which every helper below reaches through the stage.
+        theClient()
+
         watchTheBearing()
         clearTheGround()
         build()
@@ -90,7 +94,7 @@ class PortableFluidTransportTest {
         assertEquals(0, held(tank(FULL_SIDE)), "The tank the water came from was not emptied")
     }
 
-    private suspend fun build() {
+    private suspend fun Stage.build() {
         setBlock(bearing(), "create:mechanical_bearing[facing=up]")
         setBlock(bearingMotor(), "create:creative_motor[facing=up]")
 
@@ -109,7 +113,7 @@ class PortableFluidTransportTest {
      * One end of the line: the fixed interface the contraption docks with, the pump that moves water
      * through it, and the tank beyond.
      */
-    private suspend fun plumb(side: Int) {
+    private suspend fun Stage.plumb(side: Int) {
         setBlock(
             fixedPort(side),
             "create:portable_fluid_interface[facing=${if (side > 0) "north" else "south"}]",
@@ -123,79 +127,82 @@ class PortableFluidTransportTest {
         setBlock(tank(side), "create:fluid_tank")
     }
 
-    private suspend fun glue(from: BlockPos, to: BlockPos) {
+    private suspend fun Stage.glue(from: BlockPos, to: BlockPos) {
         server(from, to) { a, b ->
             serverLevel.addFreshEntity(SuperGlueEntity(serverLevel, SuperGlueEntity.span(a, b)))
         }
     }
 
-    private suspend fun fill(tank: BlockPos, amount: Int) {
+    private suspend fun Stage.fill(tank: BlockPos, amount: Int) {
         server(tank, amount) { pos, howMuch ->
             (serverLevel.getBlockEntity(pos) as FluidTankBlockEntity).controllerBE
                 .tankInventory.setFluid(FluidStack(Fluids.WATER, howMuch))
         }
     }
 
-    private suspend fun turn(motor: BlockPos, rpm: Int) {
+    private suspend fun Stage.turn(motor: BlockPos, rpm: Int) {
         server(motor, rpm) { pos, speed ->
             (serverLevel.getBlockEntity(pos) as CreativeMotorBlockEntity).generatedSpeed.setValue(speed)
         }
     }
 
     /** Whether the bearing turned the glued blocks into something that moves. */
-    private suspend fun contraptionAssembled(): Boolean = server(bearing()) { pos ->
+    private suspend fun Stage.contraptionAssembled(): Boolean = server(bearing()) { pos ->
         serverLevel.getEntitiesOfClass(AbstractContraptionEntity::class.java, AABB(pos).inflate(6.0))
             .isNotEmpty()
     }
 
     /** Whether the block that was here has been taken up into the contraption. */
-    private suspend fun joinedTheContraption(pos: BlockPos): Boolean =
+    private suspend fun Stage.joinedTheContraption(pos: BlockPos): Boolean =
         server(pos) { where -> serverLevel.getBlockState(where).isAir }
 
     /** How much fluid a tank is holding, on the server. */
-    private suspend fun held(tank: BlockPos): Int = server(tank) { pos ->
+    private suspend fun Stage.held(tank: BlockPos): Int = server(tank) { pos ->
         val be = serverLevel.getBlockEntity(pos) as? FluidTankBlockEntity ?: return@server 0
         be.controllerBE.tankInventory.fluidAmount
     }
 
-    private suspend fun clearTheGround() {
-        clearBox(BlockPos(-4, AXLE_Y - 2, ZONE - 8), BlockPos(4, AXLE_Y + 4, ZONE + 8))
+    private suspend fun Stage.clearTheGround() {
+        clearBox(at(0, (AXLE_Y - 2) + 59, ZONE - 8), at(8, (AXLE_Y + 4) + 59, ZONE + 8))
     }
 
-    private suspend fun watchTheBearing() {
+    private suspend fun Stage.watchTheBearing() {
         spectateAt(
-            Vec3(15.0, (AXLE_Y + 5).toDouble(), ZONE + 0.0),
-            Vec3(0.0, (AXLE_Y + 1).toDouble(), ZONE + 0.0),
+            Vec3.atLowerCornerOf(at(19, (AXLE_Y + 5) + 59, ZONE)),
+            Vec3.atLowerCornerOf(at(4, (AXLE_Y + 1) + 59, ZONE)),
         )
     }
 
-    private fun bearing() = BlockPos(0, AXLE_Y, ZONE)
+    private fun Stage.bearing() = at(4, (AXLE_Y) + 59, ZONE)
 
-    private fun bearingMotor() = BlockPos(0, AXLE_Y - 1, ZONE)
+    private fun Stage.bearingMotor() = at(4, (AXLE_Y - 1) + 59, ZONE)
 
     /** The tank that goes round, sitting on the bearing itself. */
-    private fun carriedTank() = BlockPos(0, AXLE_Y + 1, ZONE)
+    private fun Stage.carriedTank() = at(4, (AXLE_Y + 1) + 59, ZONE)
 
     /** What reaches out from it, so that the interface rides two blocks from the axle. */
-    private fun carriedArm() = BlockPos(1, AXLE_Y + 1, ZONE)
+    private fun Stage.carriedArm() = at(5, (AXLE_Y + 1) + 59, ZONE)
 
-    private fun carriedPort() = BlockPos(2, AXLE_Y + 1, ZONE)
+    private fun Stage.carriedPort() = at(6, (AXLE_Y + 1) + 59, ZONE)
 
     /**
      * Where the fixed interface stands: two blocks out from where the turning one comes to rest, so
      * a block of air is left between the two of them, which is the distance they reach across.
      */
-    private fun fixedPort(side: Int) = BlockPos(0, AXLE_Y + 1, ZONE + 4 * side)
+    private fun Stage.fixedPort(side: Int) = at(4, (AXLE_Y + 1) + 59, ZONE + 4 * side)
 
-    private fun pump(side: Int) = BlockPos(0, AXLE_Y + 1, ZONE + 5 * side)
+    private fun Stage.pump(side: Int) = at(4, (AXLE_Y + 1) + 59, ZONE + 5 * side)
 
-    private fun pumpMotor(side: Int) = BlockPos(0, AXLE_Y + 2, ZONE + 4 * side)
+    private fun Stage.pumpMotor(side: Int) = at(4, (AXLE_Y + 2) + 59, ZONE + 4 * side)
 
-    private fun tank(side: Int) = BlockPos(0, AXLE_Y + 1, ZONE + 6 * side)
+    private fun Stage.tank(side: Int) = at(4, (AXLE_Y + 1) + 59, ZONE + 6 * side)
 
     private companion object {
 
-        const val ZONE = Zones.PORTABLE_FLUID
+        /** The class's own strip of the shared world, which is now the stage's own corner. */
+        const val ZONE = 0
+
+
 
         /** The height the bearing turns at, with room under it for its motor. */
         const val AXLE_Y = -58

@@ -3,9 +3,6 @@ package com.simibubi.create.e2e.contraptions
 import com.simibubi.create.content.kinetics.mechanicalArm.ArmBlockEntity
 import com.simibubi.create.content.kinetics.motor.CreativeMotorBlockEntity
 import com.simibubi.create.content.logistics.depot.DepotBlockEntity
-import com.simibubi.create.e2e.Zones
-import com.simibubi.create.e2e.clearGround
-import com.simibubi.create.e2e.driving
 import com.simibubi.create.e2e.holdItem
 import com.simibubi.create.e2e.restoreHud
 import com.simibubi.create.e2e.rightClickAhead
@@ -14,8 +11,12 @@ import com.simibubi.create.e2e.serverTicks
 import com.simibubi.create.e2e.setBlock
 import com.simibubi.create.e2e.shot
 import com.simibubi.create.e2e.spectateAt
+import com.simibubi.create.e2e.watcher
+import com.simibubi.create.e2e.clearGround
 import dev.vibeported.mc.driver.ClusterScope
+import dev.vibeported.mc.driver.Stage
 import dev.vibeported.mc.driver.junit.DrivesMinecraft
+import dev.vibeported.mc.driver.junit.stage
 import dev.vibeported.mc.driver.server
 import net.minecraft.core.BlockPos
 import net.minecraft.core.registries.BuiltInRegistries
@@ -50,9 +51,12 @@ class MechanicalArmTest {
 
     @Test
     @DisplayName("A mechanical arm moves an item from the depot it takes from to the one it fills")
-    fun `moves an item between depots`(cluster: ClusterScope) = cluster.driving(within = 6.minutes) {
-        clearGround(arm(), 8)
+    fun `moves an item between depots`(cluster: ClusterScope) = cluster.stage(within = 6.minutes) {
+        // A client of this test's own, which every helper below reaches through the stage.
+        theClient()
 
+
+        clearGround(arm(), 8)
         // An arm takes no shaft of its own, so it is turned by a cogwheel meshing with it from the
         // side, and that cogwheel is the one the motor drives from below.
         setBlock(cog(), "create:cogwheel[axis=y]")
@@ -126,21 +130,21 @@ class MechanicalArmTest {
         assertTrue(held(takesFrom()).isEmpty(), "The arm left the item on the depot it takes from as well")
     }
 
-    private suspend fun armIsThere(): Boolean =
+    private suspend fun Stage.armIsThere(): Boolean =
         server(arm()) { pos -> serverLevel.getBlockEntity(pos) is ArmBlockEntity }
 
-    private suspend fun armSpeed(): Float = server(arm()) { pos ->
+    private suspend fun Stage.armSpeed(): Float = server(arm()) { pos ->
         (serverLevel.getBlockEntity(pos) as? ArmBlockEntity)?.speed ?: 0f
     }
 
     /** What a depot is holding, as a registry id, or empty when it holds nothing. */
-    private suspend fun held(pos: BlockPos): String = server(pos) { where ->
+    private suspend fun Stage.held(pos: BlockPos): String = server(pos) { where ->
         val item = depotAt(serverLevel, where).heldItem
         if (item.isEmpty) "" else BuiltInRegistries.ITEM.getKey(item.item).toString()
     }
 
     /** Stands back far enough to see both depots and the arm between them. */
-    private suspend fun watchTheArm() {
+    private suspend fun Stage.watchTheArm() {
         spectateAt(
             Vec3(arm().x + 0.5, arm().y + 2.0, arm().z + 5.5),
             Vec3.atCenterOf(arm()),
@@ -148,23 +152,22 @@ class MechanicalArmTest {
     }
 
     /** Where the arm ends up: on the ground between the two depots. */
-    private fun arm() = BlockPos(60, -58, ZONE)
+    private fun Stage.arm() = at(0, 1, 0)
 
     /** The block the arm is put down against, one step behind where it lands. */
-    private fun anchor() = arm().north()
+    private fun Stage.anchor() = arm().north()
 
     /** The cogwheel meshing with the arm, which is what actually turns it. */
-    private fun cog() = arm().east()
+    private fun Stage.cog() = arm().east()
 
-    private fun motor() = cog().below()
+    private fun Stage.motor() = cog().below()
 
-    private fun takesFrom() = arm().west(2)
+    private fun Stage.takesFrom() = arm().west(2)
 
-    private fun fills() = arm().east(2)
+    private fun Stage.fills() = arm().east(2)
 
     private companion object {
 
-        const val ZONE = Zones.MECHANICAL_ARM
 
         const val SETTLE_TICKS = 10
 

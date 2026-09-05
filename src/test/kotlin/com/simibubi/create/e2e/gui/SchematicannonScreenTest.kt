@@ -1,10 +1,7 @@
 package com.simibubi.create.e2e.gui
 
 import com.simibubi.create.content.schematics.cannon.SchematicannonBlockEntity
-import com.simibubi.create.e2e.Zones
-import com.simibubi.create.e2e.clearGround
 import com.simibubi.create.e2e.clickWidget
-import com.simibubi.create.e2e.driving
 import com.simibubi.create.e2e.restoreHud
 import com.simibubi.create.e2e.rightClickBlock
 import com.simibubi.create.e2e.serverTicks
@@ -13,8 +10,11 @@ import com.simibubi.create.e2e.shot
 import com.simibubi.create.e2e.waitForNoScreen
 import com.simibubi.create.e2e.waitForScreenNamed
 import com.simibubi.create.e2e.widget
+import com.simibubi.create.e2e.clearGround
 import dev.vibeported.mc.driver.ClusterScope
+import dev.vibeported.mc.driver.Stage
 import dev.vibeported.mc.driver.junit.DrivesMinecraft
+import dev.vibeported.mc.driver.junit.stage
 import dev.vibeported.mc.driver.server
 import net.minecraft.core.BlockPos
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -40,7 +40,10 @@ class SchematicannonScreenTest {
 
     @Test
     @DisplayName("The placement settings chosen on the schematicannon's screen reach the cannon")
-    fun `configures the placement settings`(cluster: ClusterScope) = cluster.driving {
+    fun `configures the placement settings`(cluster: ClusterScope) = cluster.stage {
+        // A client of this test's own, which every helper below reaches through the stage.
+        theClient()
+
         clearGround(cannon(), 4)
         setBlock(cannon(), "create:schematicannon")
         serverTicks(SETTLE_TICKS)
@@ -83,18 +86,17 @@ class SchematicannonScreenTest {
         )
     }
 
-    private suspend fun replaceMode(): Int = server(cannon()) { pos -> cannonAt(pos).replaceMode }
+    private suspend fun Stage.replaceMode(): Int = server(cannon()) { pos -> cannonAt(pos).replaceMode }
 
-    private suspend fun skipsMissing(): Boolean = server(cannon()) { pos -> cannonAt(pos).skipMissing }
+    private suspend fun Stage.skipsMissing(): Boolean = server(cannon()) { pos -> cannonAt(pos).skipMissing }
 
-    private suspend fun replacesBlockEntities(): Boolean =
+    private suspend fun Stage.replacesBlockEntities(): Boolean =
         server(cannon()) { pos -> cannonAt(pos).replaceBlockEntities }
 
-    private fun cannon() = BlockPos(60, -58, ZONE)
+    private fun Stage.cannon() = at(0, 1, 0)
 
     private companion object {
 
-        const val ZONE = Zones.SCHEMATICANNON
 
         const val SETTLE_TICKS = 10
 

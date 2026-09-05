@@ -1,12 +1,8 @@
 package com.simibubi.create.e2e.gui
 
 import com.simibubi.create.content.logistics.redstoneRequester.RedstoneRequesterBlockEntity
-import com.simibubi.create.e2e.ALEX
-import com.simibubi.create.e2e.Zones
-import com.simibubi.create.e2e.clearGround
 import com.simibubi.create.e2e.clickSlot
 import com.simibubi.create.e2e.clickWidget
-import com.simibubi.create.e2e.driving
 import com.simibubi.create.e2e.holdItem
 import com.simibubi.create.e2e.restoreHud
 import com.simibubi.create.e2e.rightClickBlock
@@ -18,9 +14,13 @@ import com.simibubi.create.e2e.slotHolding
 import com.simibubi.create.e2e.typeText
 import com.simibubi.create.e2e.waitForNoScreen
 import com.simibubi.create.e2e.waitForScreenNamed
+import com.simibubi.create.e2e.watcher
+import com.simibubi.create.e2e.clearGround
 import dev.vibeported.mc.driver.ClusterScope
+import dev.vibeported.mc.driver.Stage
 import dev.vibeported.mc.driver.ServerScope
 import dev.vibeported.mc.driver.junit.DrivesMinecraft
+import dev.vibeported.mc.driver.junit.stage
 import dev.vibeported.mc.driver.server
 import net.minecraft.core.BlockPos
 import net.minecraft.world.item.Items
@@ -46,13 +46,16 @@ class RedstoneRequesterScreenTest {
 
     @Test
     @DisplayName("The order set on a redstone requester's screen is the order the block is left holding")
-    fun `keeps the order it was given`(cluster: ClusterScope) = cluster.driving {
+    fun `keeps the order it was given`(cluster: ClusterScope) = cluster.stage {
+        // A client of this test's own, which every helper below reaches through the stage.
+        theClient()
+
         clearGround(requester(), 4)
         setBlock(requester(), "create:redstone_requester")
 
         // An empty hand, since a requester answers a crouching or a holding click differently.
         holdItem("minecraft:air")
-        runCommand("item replace entity $ALEX hotbar.1 with minecraft:cobblestone 1")
+        runCommand("item replace entity $watcher hotbar.1 with minecraft:cobblestone 1")
         serverTicks(SETTLE_TICKS)
 
         rightClickBlock(requester())
@@ -87,21 +90,20 @@ class RedstoneRequesterScreenTest {
         )
     }
 
-    private suspend fun address(): String =
+    private suspend fun Stage.address(): String =
         server(requester()) { pos -> requesterAt(pos).encodedTargetAdress }
 
-    private suspend fun allowsPartial(): Boolean =
+    private suspend fun Stage.allowsPartial(): Boolean =
         server(requester()) { pos -> requesterAt(pos).allowPartialRequests }
 
-    private suspend fun ordersCobblestone(): Boolean = server(requester()) { pos ->
+    private suspend fun Stage.ordersCobblestone(): Boolean = server(requester()) { pos ->
         requesterAt(pos).encodedRequest.stacks().any { it.stack.`is`(Items.COBBLESTONE) }
     }
 
-    private fun requester() = BlockPos(60, -58, ZONE)
+    private fun Stage.requester() = at(0, 1, 0)
 
     private companion object {
 
-        const val ZONE = Zones.REDSTONE_REQUESTER
 
         const val SETTLE_TICKS = 10
 

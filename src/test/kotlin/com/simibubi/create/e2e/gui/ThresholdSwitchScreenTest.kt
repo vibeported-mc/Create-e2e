@@ -1,23 +1,24 @@
 package com.simibubi.create.e2e.gui
 
 import com.simibubi.create.content.redstone.thresholdSwitch.ThresholdSwitchBlockEntity
-import com.simibubi.create.e2e.Zones
-import com.simibubi.create.e2e.clearGround
 import com.simibubi.create.e2e.clickWidget
-import com.simibubi.create.e2e.driving
 import com.simibubi.create.e2e.give
 import com.simibubi.create.e2e.readField
 import com.simibubi.create.e2e.restoreHud
 import com.simibubi.create.e2e.rightClickBlock
 import com.simibubi.create.e2e.scrollState
+import com.simibubi.create.e2e.widget
 import com.simibubi.create.e2e.scrollWidget
 import com.simibubi.create.e2e.serverTicks
 import com.simibubi.create.e2e.setBlock
 import com.simibubi.create.e2e.shot
 import com.simibubi.create.e2e.waitForNoScreen
 import com.simibubi.create.e2e.waitForScreenNamed
+import com.simibubi.create.e2e.clearGround
 import dev.vibeported.mc.driver.ClusterScope
+import dev.vibeported.mc.driver.Stage
 import dev.vibeported.mc.driver.junit.DrivesMinecraft
+import dev.vibeported.mc.driver.junit.stage
 import dev.vibeported.mc.driver.server
 import net.minecraft.core.BlockPos
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -44,7 +45,10 @@ class ThresholdSwitchScreenTest {
 
     @Test
     @DisplayName("The levels set on a threshold switch's screen are the ones the block is left with")
-    fun `configures the thresholds`(cluster: ClusterScope) = cluster.driving {
+    fun `configures the thresholds`(cluster: ClusterScope) = cluster.stage {
+        // A client of this test's own, which every helper below reaches through the stage.
+        theClient()
+
         build()
 
         // Something for it to measure, so the screen has a range worth scrolling through.
@@ -83,7 +87,10 @@ class ThresholdSwitchScreenTest {
 
     @Test
     @DisplayName("A threshold switch counts in stacks when its screen is set to, and can be inverted")
-    fun `counts in stacks and inverts`(cluster: ClusterScope) = cluster.driving {
+    fun `counts in stacks and inverts`(cluster: ClusterScope) = cluster.stage {
+        // A client of this test's own, which every helper below reaches through the stage.
+        theClient()
+
         build()
         serverTicks(SETTLE_TICKS)
 
@@ -112,26 +119,26 @@ class ThresholdSwitchScreenTest {
         assertTrue(flag("inStacks"), "Choosing to count in stacks did not reach the block")
     }
 
-    private suspend fun build() {
+    private suspend fun Stage.build() {
         clearGround(chest(), 4)
         setBlock(chest(), "minecraft:chest")
         setBlock(switchPos(), "create:stockpile_switch[target=floor,facing=north]")
     }
 
-    private suspend fun widgetOnAbove() = com.simibubi.create.e2e.widget("onAbove")
+    private suspend fun Stage.widgetOnAbove() = widget("onAbove")
 
-    private suspend fun widgetOffBelow() = com.simibubi.create.e2e.widget("offBelow")
+    private suspend fun Stage.widgetOffBelow() = widget("offBelow")
 
-    private suspend fun number(field: String): Int = server(switchPos(), field) { pos, named ->
+    private suspend fun Stage.number(field: String): Int = server(switchPos(), field) { pos, named ->
         readField(switchAt(serverLevel, pos), named) as Int
     }
 
-    private suspend fun flag(field: String): Boolean = server(switchPos(), field) { pos, named ->
+    private suspend fun Stage.flag(field: String): Boolean = server(switchPos(), field) { pos, named ->
         readField(switchAt(serverLevel, pos), named) as Boolean
     }
 
     /** Inverted is asked rather than read: the block works it out rather than keeping it in a field. */
-    private suspend fun inverted(): Boolean = server(switchPos()) { pos ->
+    private suspend fun Stage.inverted(): Boolean = server(switchPos()) { pos ->
         switchAt(serverLevel, pos).isInverted
     }
 
@@ -141,13 +148,12 @@ class ThresholdSwitchScreenTest {
      * Which way it looks is not a facing but the face it is attached by -- stood on the floor it
      * looks down, which from up here means down into the chest.
      */
-    private fun switchPos() = chest().above()
+    private fun Stage.switchPos() = chest().above()
 
-    private fun chest() = BlockPos(60, -58, ZONE)
+    private fun Stage.chest() = at(0, 1, 0)
 
     private companion object {
 
-        const val ZONE = Zones.THRESHOLD_SWITCH
 
         const val SETTLE_TICKS = 5
 

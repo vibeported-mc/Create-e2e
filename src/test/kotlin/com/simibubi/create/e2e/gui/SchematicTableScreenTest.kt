@@ -2,11 +2,8 @@ package com.simibubi.create.e2e.gui
 
 import com.simibubi.create.AllItems
 import com.simibubi.create.content.schematics.table.SchematicTableBlockEntity
-import com.simibubi.create.e2e.Zones
-import com.simibubi.create.e2e.clearGround
 import com.simibubi.create.e2e.clickSlot
 import com.simibubi.create.e2e.closeWithEscape
-import com.simibubi.create.e2e.driving
 import com.simibubi.create.e2e.holdItem
 import com.simibubi.create.e2e.restoreHud
 import com.simibubi.create.e2e.rightClickBlock
@@ -16,8 +13,11 @@ import com.simibubi.create.e2e.shot
 import com.simibubi.create.e2e.slotHolding
 import com.simibubi.create.e2e.waitForNoScreen
 import com.simibubi.create.e2e.waitForScreenNamed
+import com.simibubi.create.e2e.clearGround
 import dev.vibeported.mc.driver.ClusterScope
+import dev.vibeported.mc.driver.Stage
 import dev.vibeported.mc.driver.junit.DrivesMinecraft
+import dev.vibeported.mc.driver.junit.stage
 import dev.vibeported.mc.driver.server
 import net.minecraft.core.BlockPos
 import net.neoforged.neoforge.transfer.item.ItemUtil
@@ -42,7 +42,10 @@ class SchematicTableScreenTest {
 
     @Test
     @DisplayName("A blank schematic put into the table's slot is the one the table ends up holding")
-    fun `takes a blank schematic`(cluster: ClusterScope) = cluster.driving {
+    fun `takes a blank schematic`(cluster: ClusterScope) = cluster.stage {
+        // A client of this test's own, which every helper below reaches through the stage.
+        theClient()
+
         clearGround(table(), 4)
         setBlock(table(), "create:schematic_table[facing=south]")
         holdItem(BLANK)
@@ -69,18 +72,17 @@ class SchematicTableScreenTest {
         restoreHud()
     }
 
-    private suspend fun holdsTheBlank(): Boolean = server(table()) { pos ->
+    private suspend fun Stage.holdsTheBlank(): Boolean = server(table()) { pos ->
         val be = serverLevel.getBlockEntity(pos)
         if (be !is SchematicTableBlockEntity) throw AssertionError("There is no schematic table at $pos but $be")
 
         AllItems.EMPTY_SCHEMATIC.isIn(ItemUtil.getStack(be.inventory, INPUT_SLOT))
     }
 
-    private fun table() = BlockPos(60, -58, ZONE)
+    private fun Stage.table() = at(0, 1, 0)
 
     private companion object {
 
-        const val ZONE = Zones.SCHEMATIC_TABLE
 
         const val SETTLE_TICKS = 10
 

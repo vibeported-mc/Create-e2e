@@ -3,16 +3,17 @@ package com.simibubi.create.e2e.transportation
 import com.simibubi.create.content.fluids.tank.FluidTankBlockEntity
 import com.simibubi.create.content.kinetics.motor.CreativeMotorBlockEntity
 import com.simibubi.create.e2e.Liquid
-import com.simibubi.create.e2e.Zones
-import com.simibubi.create.e2e.driving
 import com.simibubi.create.e2e.restoreHud
 import com.simibubi.create.e2e.serverTicks
 import com.simibubi.create.e2e.setBlock
 import com.simibubi.create.e2e.shot
 import com.simibubi.create.e2e.spectateFrom
 import com.simibubi.create.e2e.waitForTicks
+import com.simibubi.create.e2e.watcher
 import dev.vibeported.mc.driver.ClusterScope
+import dev.vibeported.mc.driver.Stage
 import dev.vibeported.mc.driver.junit.DrivesMinecraft
+import dev.vibeported.mc.driver.junit.stage
 import dev.vibeported.mc.driver.server
 import net.minecraft.core.BlockPos
 import net.minecraft.server.level.ServerLevel
@@ -37,9 +38,12 @@ class FluidTransferTest {
 
     @Test
     @DisplayName("A mechanical pump moves water and lava between tanks")
-    fun `pump between tanks`(cluster: ClusterScope) = cluster.driving {
-        val water = Run(Liquid.WATER, BlockPos(0, GROUND, ZONE), 2)
-        val lava = Run(Liquid.LAVA, BlockPos(10, GROUND, ZONE), 3)
+    fun `pump between tanks`(cluster: ClusterScope) = cluster.stage {
+        // A client of this test's own, which every helper below reaches through the stage.
+        theClient()
+
+        val water = Run(Liquid.WATER, at(0, (GROUND) + 59, ZONE), 2)
+        val lava = Run(Liquid.LAVA, at(10, (GROUND) + 59, ZONE), 3)
 
         // Before building rather than after, unlike the original. A dedicated server only ticks the
         // chunks a player is near, so the camera has to arrive first or the pumps stand still.
@@ -96,22 +100,22 @@ class FluidTransferTest {
         /** The pipe run sits on the bottom layer, in the middle row of the tanks. */
         private val lane: Int get() = corner.z + width / 2
 
-        private val motor: BlockPos get() = BlockPos(corner.x + width, GROUND + 1, lane)
+        private val motor: BlockPos get() = BlockPos(corner.x + width, corner.y + 1, lane)
 
         suspend fun build() {
             tank(corner)
             tank(destinationCorner)
 
             val pipeX = corner.x + width
-            setBlock(BlockPos(pipeX, GROUND, lane), "create:fluid_pipe")
+            setBlock(BlockPos(pipeX, corner.y, lane), "create:fluid_pipe")
             // The pump pushes the way it faces, so east is from the first tank towards the second.
-            setBlock(BlockPos(pipeX + 1, GROUND, lane), "create:mechanical_pump[facing=east]")
-            setBlock(BlockPos(pipeX + 2, GROUND, lane), "create:fluid_pipe")
+            setBlock(BlockPos(pipeX + 1, corner.y, lane), "create:mechanical_pump[facing=east]")
+            setBlock(BlockPos(pipeX + 2, corner.y, lane), "create:fluid_pipe")
 
             // A pump is a cogwheel, so a cog beside it turns it, and a motor on the same axis turns
             // the cog. All three share the axis the pump faces along.
-            setBlock(BlockPos(pipeX + 1, GROUND + 1, lane), "create:cogwheel[axis=x]")
-            setBlock(BlockPos(pipeX, GROUND + 1, lane), "create:creative_motor[facing=east]")
+            setBlock(BlockPos(pipeX + 1, corner.y + 1, lane), "create:cogwheel[axis=x]")
+            setBlock(BlockPos(pipeX, corner.y + 1, lane), "create:creative_motor[facing=east]")
         }
 
         private suspend fun tank(start: BlockPos) {
@@ -148,8 +152,11 @@ class FluidTransferTest {
 
     private companion object {
 
+        /** The class's own strip of the shared world, which is now the stage's own corner. */
+        const val ZONE = 0
+
+
         /** The strip of the shared world this class builds in. */
-        const val ZONE = Zones.FLUID_TRANSFER
 
         /** The floor the whole thing stands on. */
         const val GROUND = -60
@@ -166,11 +173,11 @@ class FluidTransferTest {
          * A raised three quarter view from the south east, far enough out that both runs are in
          * frame and the fluid in every tank can be seen.
          */
-        suspend fun watchTheWholeThing() {
+        suspend fun Stage.watchTheWholeThing() {
             // Everything stands in one line running east, from the water pair at x=0 to the far lava
             // tank at x=18.
             val centreX = 9.5
-            val centreY = GROUND + 1.5
+            val centreY = GROUND + 1.5 + 59
             val centreZ = ZONE + 1.0
 
             val eyeX = centreX + 2

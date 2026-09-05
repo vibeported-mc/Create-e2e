@@ -1,12 +1,8 @@
 package com.simibubi.create.e2e.gui
 
 import com.simibubi.create.AllDataComponents
-import com.simibubi.create.e2e.ALEX
-import com.simibubi.create.e2e.Zones
-import com.simibubi.create.e2e.clearGround
 import com.simibubi.create.e2e.clickSlot
 import com.simibubi.create.e2e.clickWidget
-import com.simibubi.create.e2e.driving
 import com.simibubi.create.e2e.holdItem
 import com.simibubi.create.e2e.itemInSlot
 import com.simibubi.create.e2e.restoreHud
@@ -18,8 +14,12 @@ import com.simibubi.create.e2e.sneakRightClick
 import com.simibubi.create.e2e.standAt
 import com.simibubi.create.e2e.waitForNoScreen
 import com.simibubi.create.e2e.waitForScreenNamed
+import com.simibubi.create.e2e.watcher
+import com.simibubi.create.e2e.clearGround
 import dev.vibeported.mc.driver.ClusterScope
+import dev.vibeported.mc.driver.Stage
 import dev.vibeported.mc.driver.junit.DrivesMinecraft
+import dev.vibeported.mc.driver.junit.stage
 import dev.vibeported.mc.driver.server
 import kotlinx.serialization.Serializable
 import net.minecraft.core.BlockPos
@@ -47,7 +47,10 @@ class LinkedControllerScreenTest {
 
     @Test
     @DisplayName("A frequency dropped into the linked controller is on the item once it is closed")
-    fun `keeps the frequency it was given`(cluster: ClusterScope) = cluster.driving {
+    fun `keeps the frequency it was given`(cluster: ClusterScope) = cluster.stage {
+        // A client of this test's own, which every helper below reaches through the stage.
+        theClient()
+
         open()
         shot("linked_controller_opened")
 
@@ -69,7 +72,10 @@ class LinkedControllerScreenTest {
 
     @Test
     @DisplayName("The linked controller's trash button clears the frequencies it was holding")
-    fun `clears the frequencies`(cluster: ClusterScope) = cluster.driving {
+    fun `clears the frequencies`(cluster: ClusterScope) = cluster.stage {
+        // A client of this test's own, which every helper below reaches through the stage.
+        theClient()
+
         open()
         putIntoFirstSlot()
 
@@ -88,7 +94,7 @@ class LinkedControllerScreenTest {
     }
 
     /** The gesture that opens it: sneaking and right-clicking, with the controller in the main hand. */
-    private suspend fun open() {
+    private suspend fun Stage.open() {
         // Ground of its own and a look at open sky, so the crouching click reaches the item rather
         // than whatever the last scene left standing in front of the player.
         clearGround(here(), 4)
@@ -98,7 +104,7 @@ class LinkedControllerScreenTest {
         )
 
         holdItem("create:linked_controller")
-        runCommand("item replace entity $ALEX hotbar.1 with $FREQUENCY 1")
+        runCommand("item replace entity $watcher hotbar.1 with $FREQUENCY 1")
         serverTicks(SETTLE_TICKS)
 
         sneakRightClick()
@@ -110,12 +116,12 @@ class LinkedControllerScreenTest {
      * Two clicks, as a player makes them: the cobblestone up out of the inventory and down onto the
      * first frequency slot. A ghost slot only takes a likeness, so the cobblestone itself stays.
      */
-    private suspend fun putIntoFirstSlot() {
+    private suspend fun Stage.putIntoFirstSlot() {
         clickSlot(slotHolding(FREQUENCY))
         clickSlot(FIRST_FREQUENCY_SLOT)
     }
 
-    private suspend fun close() {
+    private suspend fun Stage.close() {
         clickWidget("confirmButton")
         waitForNoScreen()
         serverTicks(SETTLE_TICKS)
@@ -123,7 +129,7 @@ class LinkedControllerScreenTest {
     }
 
     /** What the controller in the player's hand is bound to, on the server. */
-    private suspend fun frequencies(): Frequencies = server(ALEX) { name ->
+    private suspend fun Stage.frequencies(): Frequencies = server(watcher) { name ->
         val bound = playerNamed(name).mainHandItem.get(AllDataComponents.LINKED_CONTROLLER_ITEMS)
             ?: return@server Frequencies(emptyList())
 
@@ -141,11 +147,10 @@ class LinkedControllerScreenTest {
     @Serializable
     private data class Frequencies(val values: List<String>)
 
-    private fun here() = BlockPos(60, -58, ZONE)
+    private fun Stage.here() = at(0, 1, 0)
 
     private companion object {
 
-        const val ZONE = Zones.LINKED_CONTROLLER
 
         const val SETTLE_TICKS = 10
 

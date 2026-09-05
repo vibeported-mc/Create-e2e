@@ -3,8 +3,6 @@ package com.simibubi.create.e2e.transportation
 import com.simibubi.create.content.fluids.tank.FluidTankBlockEntity
 import com.simibubi.create.content.kinetics.motor.CreativeMotorBlockEntity
 import com.simibubi.create.e2e.Liquid
-import com.simibubi.create.e2e.Zones
-import com.simibubi.create.e2e.driving
 import com.simibubi.create.e2e.fill
 import com.simibubi.create.e2e.restoreHud
 import com.simibubi.create.e2e.serverTicks
@@ -12,8 +10,11 @@ import com.simibubi.create.e2e.setBlock
 import com.simibubi.create.e2e.shot
 import com.simibubi.create.e2e.spectateFrom
 import com.simibubi.create.e2e.waitForTicks
+import com.simibubi.create.e2e.watcher
 import dev.vibeported.mc.driver.ClusterScope
+import dev.vibeported.mc.driver.Stage
 import dev.vibeported.mc.driver.junit.DrivesMinecraft
+import dev.vibeported.mc.driver.junit.stage
 import dev.vibeported.mc.driver.server
 import net.minecraft.core.BlockPos
 import net.minecraft.server.level.ServerLevel
@@ -41,9 +42,12 @@ class HosePulleyTest {
 
     @Test
     @DisplayName("Hose pulleys drain one glass tank into another")
-    fun `pulley to pulley`(cluster: ClusterScope) = cluster.driving {
-        val water = Run(Liquid.WATER, 0, ZONE)
-        val lava = Run(Liquid.LAVA, 16, ZONE)
+    fun `pulley to pulley`(cluster: ClusterScope) = cluster.stage(radius = 40) {
+        // A client of this test's own, which every helper below reaches through the stage.
+        theClient()
+
+        val water = Run(this, Liquid.WATER, 0, ZONE)
+        val lava = Run(this, Liquid.LAVA, 16, ZONE)
 
         watchTheWholeThing()
 
@@ -93,9 +97,12 @@ class HosePulleyTest {
 
     @Test
     @DisplayName("A hose pulley drains into a Create tank, and fills a pool from one")
-    fun `glass and create tanks`(cluster: ClusterScope) = cluster.driving {
-        val draining = Mixed(Liquid.WATER, 0, fromThePool = true, zone = MIXED_ZONE)
-        val filling = Mixed(Liquid.LAVA, 18, fromThePool = false, zone = MIXED_ZONE)
+    fun `glass and create tanks`(cluster: ClusterScope) = cluster.stage(radius = 40) {
+        // A client of this test's own, which every helper below reaches through the stage.
+        theClient()
+
+        val draining = Mixed(this, Liquid.WATER, 0, fromThePool = true, zone = MIXED_ZONE)
+        val filling = Mixed(this, Liquid.LAVA, 18, fromThePool = false, zone = MIXED_ZONE)
 
         watchTheWholeThing(MIXED_ZONE)
 
@@ -134,32 +141,44 @@ class HosePulleyTest {
      *
      * @param x where the inside of the first tank starts; everything else follows from it
      */
-    private class Run(val liquid: Liquid, val x: Int, val zone: Int) {
+    private class Run(val stage: Stage, val liquid: Liquid, val x: Int, val zone: Int) {
+
+        /*
+         * Two sets of numbers, and keeping them apart matters. The `...X` values are offsets from
+         * the stage's own corner; the positions are places in the world. Taking `.x` off a position
+         * and handing it back to `stage.at` adds the stage's corner a second time -- which lays the
+         * pipe run two thousand blocks east, in whatever stage happens to be there.
+         */
+        private val destinationX: Int get() = x + INSIDE + 5
+
+        private val sourcePulleyX: Int get() = x + 1
+
+        private val destinationPulleyX: Int get() = destinationX + 1
+
+        private val pumpX: Int get() = (sourcePulleyX + 1 + destinationPulleyX - 1) / 2
 
         /** The inside of the tank the fluid starts in. */
-        val sourceInside: BlockPos get() = BlockPos(x, FLOOR + 1, zone)
+        val sourceInside: BlockPos get() = stage.at(x, (FLOOR + 1) + 59, zone)
 
         /** The inside of the tank it should end up in, six blocks further east. */
-        val destinationInside: BlockPos get() = BlockPos(x + INSIDE + 5, FLOOR + 1, zone)
+        val destinationInside: BlockPos get() = stage.at(destinationX, (FLOOR + 1) + 59, zone)
 
-        val sourcePulley: BlockPos get() = BlockPos(x + 1, PIPE_LEVEL, zone + 1)
+        val sourcePulley: BlockPos get() = stage.at(sourcePulleyX, (PIPE_LEVEL) + 59, zone + 1)
 
-        val destinationPulley: BlockPos get() = BlockPos(destinationInside.x + 1, PIPE_LEVEL, zone + 1)
+        val destinationPulley: BlockPos get() = stage.at(destinationPulleyX, (PIPE_LEVEL) + 59, zone + 1)
 
         /** Where the far hose is stopped: one below the block it should come to rest in. */
         private val farHoseStop: BlockPos get() = destinationPulley.below(2)
 
-        private val pumpX: Int get() = (sourcePulley.x + 1 + destinationPulley.x - 1) / 2
-
-        private val pumpMotor: BlockPos get() = BlockPos(pumpX - 1, PIPE_LEVEL + 1, zone + 1)
+        private val pumpMotor: BlockPos get() = stage.at(pumpX - 1, (PIPE_LEVEL + 1) + 59, zone + 1)
 
         suspend fun blockTheFarHose() = setBlock(farHoseStop, "minecraft:glass")
 
         suspend fun clearTheFarHoseStop() = setBlock(farHoseStop, "minecraft:air")
 
         suspend fun build() {
-            glassTank(sourceInside, filled = true, liquid = liquid, zone = zone)
-            glassTank(destinationInside, filled = false, liquid = liquid, zone = zone)
+            stage.glassTank(sourceInside, filled = true, liquid = liquid, zone = zone)
+            stage.glassTank(destinationInside, filled = false, liquid = liquid, zone = zone)
 
             // A pulley carries its shaft on one side and its pipe on the other, so the two face
             // opposite ways: the pipes point at each other and the motors sit on the outside.
@@ -168,19 +187,20 @@ class HosePulleyTest {
             setBlock(sourcePulley.west(), "create:creative_motor[facing=east]")
             setBlock(destinationPulley.east(), "create:creative_motor[facing=west]")
 
-            // Pipe between the two, with a pump partway along pushing east.
-            val from = sourcePulley.x + 1
-            val to = destinationPulley.x - 1
+            // Pipe between the two, with a pump partway along pushing east. Counted in offsets,
+            // because `stage.at` is what turns an offset into a place.
+            val from = sourcePulleyX + 1
+            val to = destinationPulleyX - 1
 
             for (px in from..to) {
                 setBlock(
-                    BlockPos(px, PIPE_LEVEL, zone + 1),
+                    stage.at(px, (PIPE_LEVEL) + 59, zone + 1),
                     if (px == pumpX) "create:mechanical_pump[facing=east]" else "create:fluid_pipe",
                 )
             }
 
             // The pump is a cogwheel; a cog above it and a motor beside that turn it.
-            setBlock(BlockPos(pumpX, PIPE_LEVEL + 1, zone + 1), "create:cogwheel[axis=x]")
+            setBlock(stage.at(pumpX, (PIPE_LEVEL + 1) + 59, zone + 1), "create:cogwheel[axis=x]")
             setBlock(pumpMotor, "create:creative_motor[facing=east]")
         }
 
@@ -188,12 +208,12 @@ class HosePulleyTest {
          * Negative here: a cog reverses what it meshes with, and a pump moves fluid the way it is
          * turning rather than the way it faces.
          */
-        suspend fun startPump() = motor(pumpMotor, -PUMP_SPEED)
+        suspend fun startPump() = stage.motor(pumpMotor, -PUMP_SPEED)
 
         suspend fun lowerTheHoses() {
-            motor(sourcePulley.west(), NEAR_PULLEY_SPEED)
+            stage.motor(sourcePulley.west(), NEAR_PULLEY_SPEED)
             // Negative because the far motor faces the other way.
-            motor(destinationPulley.east(), -FAR_PULLEY_SPEED)
+            stage.motor(destinationPulley.east(), -FAR_PULLEY_SPEED)
         }
 
         suspend fun removeTheHoseMotors() {
@@ -212,15 +232,22 @@ class HosePulleyTest {
      * @param fromThePool true when the pulley is draining the glass tank into the Create tank, false
      *                    when it is the far end filling the glass tank from one
      */
-    private class Mixed(val liquid: Liquid, val x: Int, val fromThePool: Boolean, val zone: Int) {
+    private class Mixed(val stage: Stage, val liquid: Liquid, val x: Int, val fromThePool: Boolean, val zone: Int) {
+
+        /* Offsets first, places second. @see Run for why the two must not be mixed up. */
+        private val poolX: Int get() = if (fromThePool) x else x + 6
+
+        private val pulleyX: Int get() = poolX + 1
+
+        private val createTankX: Int get() = if (fromThePool) x + 6 else x
 
         /** The glass tank stands at the pulley end of the line and the Create tank at the other. */
-        private val poolInside: BlockPos get() = BlockPos(if (fromThePool) x else x + 6, FLOOR + 1, zone)
+        private val poolInside: BlockPos get() = stage.at(poolX, (FLOOR + 1) + 59, zone)
 
-        private val pulley: BlockPos get() = BlockPos(poolInside.x + 1, PIPE_LEVEL, zone + 1)
+        private val pulley: BlockPos get() = stage.at(pulleyX, (PIPE_LEVEL) + 59, zone + 1)
 
         private val createTank: BlockPos
-            get() = BlockPos(if (fromThePool) x + 6 else x, PIPE_LEVEL - 2, zone)
+            get() = stage.at(createTankX, (PIPE_LEVEL - 2) + 59, zone)
 
         private val motorPos: BlockPos get() = if (fromThePool) pulley.west() else pulley.east()
 
@@ -229,15 +256,15 @@ class HosePulleyTest {
 
         private val pumpX: Int
             get() {
-                val from = if (fromThePool) pulley.x + 1 else createTank.x + 3
-                val to = if (fromThePool) createTank.x - 1 else pulley.x - 1
+                val from = if (fromThePool) pulleyX + 1 else createTankX + 3
+                val to = if (fromThePool) createTankX - 1 else pulleyX - 1
                 return (from + to) / 2
             }
 
-        private val pumpMotor: BlockPos get() = BlockPos(pumpX - 1, PIPE_LEVEL + 1, zone + 1)
+        private val pumpMotor: BlockPos get() = stage.at(pumpX - 1, (PIPE_LEVEL + 1) + 59, zone + 1)
 
         suspend fun build() {
-            glassTank(poolInside, filled = fromThePool, liquid = liquid, zone = zone)
+            stage.glassTank(poolInside, filled = fromThePool, liquid = liquid, zone = zone)
 
             for (dx in 0 until 3)
                 for (dy in 0 until 3)
@@ -255,17 +282,17 @@ class HosePulleyTest {
                 if (fromThePool) "create:creative_motor[facing=east]" else "create:creative_motor[facing=west]",
             )
 
-            val from = if (fromThePool) pulley.x + 1 else createTank.x + 3
-            val to = if (fromThePool) createTank.x - 1 else pulley.x - 1
+            val from = if (fromThePool) pulleyX + 1 else createTankX + 3
+            val to = if (fromThePool) createTankX - 1 else pulleyX - 1
 
             for (px in from..to) {
                 setBlock(
-                    BlockPos(px, PIPE_LEVEL, zone + 1),
+                    stage.at(px, (PIPE_LEVEL) + 59, zone + 1),
                     if (px == pumpX) "create:mechanical_pump[facing=east]" else "create:fluid_pipe",
                 )
             }
 
-            setBlock(BlockPos(pumpX, PIPE_LEVEL + 1, zone + 1), "create:cogwheel[axis=x]")
+            setBlock(stage.at(pumpX, (PIPE_LEVEL + 1) + 59, zone + 1), "create:cogwheel[axis=x]")
             setBlock(pumpMotor, "create:creative_motor[facing=east]")
 
             // A hose at rest ends inside the pulley itself, and let all the way down it fills only
@@ -274,8 +301,8 @@ class HosePulleyTest {
         }
 
         suspend fun start() {
-            motor(pumpMotor, -PUMP_SPEED)
-            motor(motorPos, if (fromThePool) NEAR_PULLEY_SPEED else -NEAR_PULLEY_SPEED)
+            stage.motor(pumpMotor, -PUMP_SPEED)
+            stage.motor(motorPos, if (fromThePool) NEAR_PULLEY_SPEED else -NEAR_PULLEY_SPEED)
 
             if (!fromThePool) {
                 server(createTank, liquid, TANK_AMOUNT) { pos, which, amount ->
@@ -305,10 +332,16 @@ class HosePulleyTest {
 
     private companion object {
 
-        const val ZONE = Zones.HOSE_PULLEY
+        /** The class's own strip of the shared world, which is now the stage's own corner. */
+        const val ZONE = 0
 
-        /** The second test builds beside the first rather than on top of it. */
-        const val MIXED_ZONE = Zones.HOSE_PULLEY + 32
+
+
+        /**
+         * The second test used to build beside the first, because they shared a patch of world.
+         * They do not any more -- each takes a stage of its own -- so it builds in the same place.
+         */
+        const val MIXED_ZONE = 0
 
         /** The floor the glass tanks stand on. */
         const val FLOOR = -61
@@ -347,14 +380,14 @@ class HosePulleyTest {
         /** What the Create tank is given when it is the one being drained. */
         const val TANK_AMOUNT = 24000
 
-        suspend fun motor(pos: BlockPos, speed: Int) {
+        suspend fun Stage.motor(pos: BlockPos, speed: Int) {
             server(pos, speed) { where, rpm ->
                 (serverLevel.getBlockEntity(where) as CreativeMotorBlockEntity).generatedSpeed.setValue(rpm)
             }
         }
 
         /** A glass box open at the top, filled to the brim or left empty. */
-        suspend fun glassTank(inside: BlockPos, filled: Boolean, liquid: Liquid, zone: Int) {
+        suspend fun Stage.glassTank(inside: BlockPos, filled: Boolean, liquid: Liquid, zone: Int) {
             val low = inside.offset(-1, -1, -1)
             val high = inside.offset(INSIDE, HEIGHT, INSIDE)
             val insideHigh = inside.offset(INSIDE - 1, HEIGHT - 1, INSIDE - 1)
@@ -387,9 +420,9 @@ class HosePulleyTest {
          * A raised three quarter view from the south east, far enough out that everything is in
          * frame.
          */
-        suspend fun watchTheWholeThing(zone: Int = ZONE) {
+        suspend fun Stage.watchTheWholeThing(zone: Int = ZONE) {
             val centreX = 12.5
-            val centreY = FLOOR + 3.0
+            val centreY = FLOOR + 3.0 + 59
             val centreZ = zone + 1.0
 
             val eyeX = centreX + 2

@@ -2,17 +2,18 @@ package com.simibubi.create.e2e.contraptions
 
 import com.simibubi.create.content.kinetics.motor.CreativeMotorBlockEntity
 import com.simibubi.create.content.logistics.depot.DepotBlockEntity
-import com.simibubi.create.e2e.Zones
-import com.simibubi.create.e2e.clearGround
-import com.simibubi.create.e2e.driving
 import com.simibubi.create.e2e.restoreHud
 import com.simibubi.create.e2e.serverTicks
 import com.simibubi.create.e2e.setBlock
 import com.simibubi.create.e2e.shot
 import com.simibubi.create.e2e.spectateAt
 import com.simibubi.create.e2e.waitForTicks
+import com.simibubi.create.e2e.watcher
+import com.simibubi.create.e2e.clearGround
 import dev.vibeported.mc.driver.ClusterScope
+import dev.vibeported.mc.driver.Stage
 import dev.vibeported.mc.driver.junit.DrivesMinecraft
+import dev.vibeported.mc.driver.junit.stage
 import dev.vibeported.mc.driver.server
 import net.minecraft.core.BlockPos
 import net.minecraft.core.registries.BuiltInRegistries
@@ -41,7 +42,10 @@ class EncasedFanTest {
 
     @Test
     @DisplayName("A fan blowing through water washes the ice on the depot below into packed ice")
-    fun `washes what the draught reaches`(cluster: ClusterScope) = cluster.driving {
+    fun `washes what the draught reaches`(cluster: ClusterScope) = cluster.stage {
+        // A client of this test's own, which every helper below reaches through the stage.
+        theClient()
+
         clearGround(DEPOT, 6)
         watchTheFan()
 
@@ -79,12 +83,12 @@ class EncasedFanTest {
      * An `ItemStack` could cross with a serializer written for it, but the id is the whole of what
      * this asks about, and a name reads better in a failure than a stack would.
      */
-    private suspend fun onTheDepot(): String = server(DEPOT) { pos ->
+    private suspend fun Stage.onTheDepot(): String = server(DEPOT) { pos ->
         val held = depotAt(serverLevel, pos).heldItem
         if (held.isEmpty) "" else BuiltInRegistries.ITEM.getKey(held.item).toString()
     }
 
-    private suspend fun watchTheFan() {
+    private suspend fun Stage.watchTheFan() {
         spectateAt(
             Vec3(DEPOT.x + 0.5, DEPOT.y + 1.0, DEPOT.z + 6.0),
             Vec3.atCenterOf(WATER),
@@ -93,7 +97,6 @@ class EncasedFanTest {
 
     private companion object {
 
-        const val ZONE = Zones.ENCASED_FAN
 
         const val SETTLE_TICKS = 10
 
@@ -103,10 +106,10 @@ class EncasedFanTest {
         const val PATIENCE_TICKS = 400
 
         /** What is being washed, directly under the water. */
-        val DEPOT: BlockPos = BlockPos(60, -56, ZONE)
-        val WATER: BlockPos = DEPOT.above()
-        val FAN: BlockPos = WATER.above()
-        val MOTOR: BlockPos = FAN.above()
+        val Stage.DEPOT: BlockPos get() = at(0, 3, 0)
+        val Stage.WATER: BlockPos get() = DEPOT.above()
+        val Stage.FAN: BlockPos get() = WATER.above()
+        val Stage.MOTOR: BlockPos get() = FAN.above()
 
         fun depotAt(level: net.minecraft.server.level.ServerLevel, pos: BlockPos): DepotBlockEntity =
             level.getBlockEntity(pos) as? DepotBlockEntity

@@ -1,10 +1,7 @@
 package com.simibubi.create.e2e.gui
 
 import com.simibubi.create.content.logistics.packagePort.PackagePortBlockEntity
-import com.simibubi.create.e2e.Zones
-import com.simibubi.create.e2e.clearGround
 import com.simibubi.create.e2e.clickWidget
-import com.simibubi.create.e2e.driving
 import com.simibubi.create.e2e.holdItem
 import com.simibubi.create.e2e.restoreHud
 import com.simibubi.create.e2e.rightClickBlock
@@ -14,8 +11,11 @@ import com.simibubi.create.e2e.shot
 import com.simibubi.create.e2e.typeText
 import com.simibubi.create.e2e.waitForNoScreen
 import com.simibubi.create.e2e.waitForScreenNamed
+import com.simibubi.create.e2e.clearGround
 import dev.vibeported.mc.driver.ClusterScope
+import dev.vibeported.mc.driver.Stage
 import dev.vibeported.mc.driver.junit.DrivesMinecraft
+import dev.vibeported.mc.driver.junit.stage
 import dev.vibeported.mc.driver.server
 import net.minecraft.core.BlockPos
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -41,7 +41,10 @@ class PackagePortScreenTest {
 
     @Test
     @DisplayName("The address typed onto a postbox is the one the block is left answering to")
-    fun `keeps its address`(cluster: ClusterScope) = cluster.driving {
+    fun `keeps its address`(cluster: ClusterScope) = cluster.stage {
+        // A client of this test's own, which every helper below reaches through the stage.
+        theClient()
+
         clearGround(postbox(), 4)
         setBlock(postbox(), "create:blue_postbox[facing=south]")
 
@@ -69,18 +72,17 @@ class PackagePortScreenTest {
         )
     }
 
-    private suspend fun address(): String = server(postbox()) { pos ->
+    private suspend fun Stage.address(): String = server(postbox()) { pos ->
         val be = serverLevel.getBlockEntity(pos)
         if (be !is PackagePortBlockEntity) throw AssertionError("There is no postbox at $pos but $be")
 
         be.addressFilter
     }
 
-    private fun postbox() = BlockPos(60, -58, ZONE)
+    private fun Stage.postbox() = at(0, 1, 0)
 
     private companion object {
 
-        const val ZONE = Zones.PACKAGE_PORT
 
         const val SETTLE_TICKS = 10
 

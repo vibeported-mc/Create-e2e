@@ -3,12 +3,8 @@ package com.simibubi.create.e2e.gui
 import com.simibubi.create.content.logistics.factoryBoard.FactoryPanelBehaviour
 import com.simibubi.create.content.logistics.factoryBoard.FactoryPanelBlockEntity
 import com.simibubi.create.content.logistics.packagerLink.LogisticallyLinkedBlockItem
-import com.simibubi.create.e2e.ALEX
-import com.simibubi.create.e2e.Zones
-import com.simibubi.create.e2e.clearGround
 import com.simibubi.create.e2e.clickSlot
 import com.simibubi.create.e2e.clickWidget
-import com.simibubi.create.e2e.driving
 import com.simibubi.create.e2e.holdItem
 import com.simibubi.create.e2e.readField
 import com.simibubi.create.e2e.restoreHud
@@ -24,10 +20,14 @@ import com.simibubi.create.e2e.typeText
 import com.simibubi.create.e2e.waitForNoScreen
 import com.simibubi.create.e2e.waitForScreenNamed
 import com.simibubi.create.e2e.widget
+import com.simibubi.create.e2e.watcher
+import com.simibubi.create.e2e.clearGround
 import dev.vibeported.mc.driver.ClusterScope
+import dev.vibeported.mc.driver.Stage
 import dev.vibeported.mc.driver.ServerScope
 import dev.vibeported.mc.driver.client
 import dev.vibeported.mc.driver.junit.DrivesMinecraft
+import dev.vibeported.mc.driver.junit.stage
 import dev.vibeported.mc.driver.server
 import net.minecraft.core.BlockPos
 import net.minecraft.core.registries.BuiltInRegistries
@@ -60,13 +60,16 @@ class FactoryPanelScreenTest {
 
     @Test
     @DisplayName("A factory panel is told what it makes on one screen and how to order it on the next")
-    fun `sets its item and then its order`(cluster: ClusterScope) = cluster.driving {
+    fun `sets its item and then its order`(cluster: ClusterScope) = cluster.stage {
+        // A client of this test's own, which every helper below reaches through the stage.
+        theClient()
+
         clearGround(wall(), 4)
         setBlock(wall(), "minecraft:stone")
 
         holdItem("create:factory_gauge")
-        runCommand("item replace entity $ALEX hotbar.1 with $MAKES 1")
-        runCommand("item replace entity $ALEX hotbar.2 with minecraft:air")
+        runCommand("item replace entity $watcher hotbar.1 with $MAKES 1")
+        runCommand("item replace entity $watcher hotbar.2 with minecraft:air")
         serverTicks(SETTLE_TICKS)
 
         // A gauge refuses to be placed until it has been tuned to a logistics network, which in play
@@ -126,41 +129,41 @@ class FactoryPanelScreenTest {
         )
     }
 
-    private suspend fun selectHotbar(slot: Int) {
-        client(ALEX, slot) { which ->
+    private suspend fun Stage.selectHotbar(slot: Int) {
+        client(watcher, slot) { which ->
             clientPlayer?.inventory?.setSelectedSlot(which)
             awaitTicks(1)
         }
     }
 
     /** Returns the frequency given, since a body that answers nothing has nothing to report. */
-    private suspend fun tuneToSomeNetwork(): String = server(ALEX) { name ->
+    private suspend fun Stage.tuneToSomeNetwork(): String = server(watcher) { name ->
         val player = playerNamed(name)
         val frequency = UUID.randomUUID()
         LogisticallyLinkedBlockItem.assignFrequency(player.mainHandItem, player, frequency)
         frequency.toString()
     }
 
-    private suspend fun onTheWall(): Boolean = server(panel()) { pos ->
+    private suspend fun Stage.onTheWall(): Boolean = server(panel()) { pos ->
         serverLevel.getBlockEntity(pos) is FactoryPanelBlockEntity
     }
 
-    private suspend fun itemOnThePanel(): String = server(panel()) { pos ->
+    private suspend fun Stage.itemOnThePanel(): String = server(panel()) { pos ->
         BuiltInRegistries.ITEM.getKey(configuredPanel(pos).filter.item).toString()
     }
 
-    private suspend fun addressOnThePanel(): String = server(panel()) { pos ->
+    private suspend fun Stage.addressOnThePanel(): String = server(panel()) { pos ->
         readField(configuredPanel(pos), "recipeAddress") as String
     }
 
-    private suspend fun expiryOnThePanel(): Int = server(panel()) { pos ->
+    private suspend fun Stage.expiryOnThePanel(): Int = server(panel()) { pos ->
         readField(configuredPanel(pos), "promiseClearingInterval") as Int
     }
 
-    private fun wall() = BlockPos(60, -57, ZONE)
+    private fun Stage.wall() = at(0, 2, 0)
 
     /** The panel itself, hung on the south face of the wall. */
-    private fun panel() = wall().south()
+    private fun Stage.panel() = wall().south()
 
     /**
      * The spot on the wall's face that every click here is aimed at.
@@ -169,11 +172,10 @@ class FactoryPanelScreenTest {
      * the corner where all four meet. Aiming at the same quarter each time is what puts the panel
      * there and then opens that same one.
      */
-    private fun quarter() = Vec3(wall().x + 0.3, wall().y + 0.3, wall().z + 1.0)
+    private fun Stage.quarter() = Vec3(wall().x + 0.3, wall().y + 0.3, wall().z + 1.0)
 
     private companion object {
 
-        const val ZONE = Zones.FACTORY_PANEL
 
         const val SETTLE_TICKS = 10
 

@@ -15,12 +15,9 @@ import com.simibubi.create.content.trains.TrainHUD
 import com.simibubi.create.content.trains.entity.CarriageContraptionEntity
 import com.simibubi.create.content.trains.station.StationBlockEntity
 import com.simibubi.create.content.trains.track.TrackBlockEntity
-import com.simibubi.create.e2e.ALEX
-import com.simibubi.create.e2e.Zones
 import com.simibubi.create.e2e.clickWidget
 import com.simibubi.create.e2e.closeAnyScreen
 import com.simibubi.create.e2e.closeWithEscape
-import com.simibubi.create.e2e.driving
 import com.simibubi.create.e2e.holdItem
 import com.simibubi.create.e2e.restoreHud
 import com.simibubi.create.e2e.rightClickAt
@@ -33,17 +30,22 @@ import com.simibubi.create.e2e.spectateAt
 import com.simibubi.create.e2e.typeText
 import com.simibubi.create.e2e.waitForScreenNamed
 import dev.vibeported.mc.driver.ClientScope
+import com.simibubi.create.e2e.watcher
 import dev.vibeported.mc.driver.ClusterScope
+import dev.vibeported.mc.driver.Stage
 import dev.vibeported.mc.driver.Key
 import dev.vibeported.mc.driver.ServerScope
 import dev.vibeported.mc.driver.MouseButton
 import dev.vibeported.mc.driver.click
 import dev.vibeported.mc.driver.client
+import dev.vibeported.mc.driver.junit.ClassStage
 import dev.vibeported.mc.driver.junit.DrivesMinecraft
+import dev.vibeported.mc.driver.junit.stage
 import dev.vibeported.mc.driver.keyDown
 import dev.vibeported.mc.driver.keyUp
 import dev.vibeported.mc.driver.server
 import kotlinx.serialization.Serializable
+import kotlin.time.Duration
 import kotlin.time.Duration.Companion.minutes
 import net.minecraft.core.BlockPos
 import net.minecraft.core.Direction
@@ -93,7 +95,25 @@ import org.junit.jupiter.api.TestMethodOrder
  *
  * Ported from Create's `TrainCircuitTest`.
  */
+/**
+ * How wide this class's stage is.
+ *
+ * A file-level constant because a class cannot use its own companion's in its own annotation.
+ *
+ * Wider than the ring itself, and deliberately. Track is not laid block by block here: it is
+ * clicked, and Create works out the curve between the two ends -- so where a half turn actually
+ * comes down is Create's decision rather than this test's, and a ring that wanders off the floor is
+ * a ring laid over void.
+ *
+ * Sixty is the ring's own reach: the search that counts its railways looks forty blocks either side
+ * of a middle sitting twenty along and ten across, so nothing it lays is further than that from this
+ * corner. The sweep afterwards reaches further still, so a piece that does land over the edge is
+ * taken back even though it had no floor under it.
+ */
+private const val CIRCUIT_RADIUS_ON_THE_GROUND = 60
+
 @DrivesMinecraft
+@ClassStage(radius = CIRCUIT_RADIUS_ON_THE_GROUND)
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 @TestMethodOrder(MethodOrderer.OrderAnnotation::class)
 class TrainCircuitTest {
@@ -104,7 +124,10 @@ class TrainCircuitTest {
     @Test
     @Order(1)
     @DisplayName("A closed circuit of track is laid by clicking, half turns and all")
-    fun `lays a circuit of track`(cluster: ClusterScope) = cluster.driving(within = 8.minutes) {
+    fun `lays a circuit of track`(cluster: ClusterScope) = cluster.stage(within = PHASE_DEADLINE) {
+        // A client of this test's own, which every helper below reaches through the stage.
+        theClient()
+
         // Somewhere to watch from that also loads the chunks. Track laid into a chunk nobody is near
         // is track the server does not keep, and a curve is worked out from the pieces at both ends.
         watchTheCircuit()
@@ -160,7 +183,10 @@ class TrainCircuitTest {
     @Test
     @Order(2)
     @DisplayName("Three stations are put on the circuit and given their names")
-    fun `places three stations`(cluster: ClusterScope) = cluster.driving(within = 8.minutes) {
+    fun `places three stations`(cluster: ClusterScope) = cluster.stage(within = PHASE_DEADLINE) {
+        // A client of this test's own, which every helper below reaches through the stage.
+        theClient()
+
         assertEquals(
             1, graphCount(),
             "There is no railway to put stations on -- did the circuit fail to be laid?",
@@ -188,7 +214,10 @@ class TrainCircuitTest {
     @Test
     @Order(3)
     @DisplayName("A train is built on the rails at the parking station and assembled from its screen")
-    fun `builds a train at the parking station`(cluster: ClusterScope) = cluster.driving(within = 8.minutes) {
+    fun `builds a train at the parking station`(cluster: ClusterScope) = cluster.stage(within = PHASE_DEADLINE) {
+        // A client of this test's own, which every helper below reaches through the stage.
+        theClient()
+
         assertEquals(
             PARKING_NAME, stationName(PARKING),
             "There is no named station to build a train at -- did the station phase fail?",
@@ -252,7 +281,10 @@ class TrainCircuitTest {
     @Test
     @Order(4)
     @DisplayName("The train is ridden a full circuit by hand and parked back at the parking station")
-    fun `rides the train round the circuit`(cluster: ClusterScope) = cluster.driving(within = 8.minutes) {
+    fun `rides the train round the circuit`(cluster: ClusterScope) = cluster.stage(within = PHASE_DEADLINE) {
+        // A client of this test's own, which every helper below reaches through the stage.
+        theClient()
+
         assertEquals(1, trainCount(), "There is no train to ride -- did the building phase fail?")
 
         // A lap and nothing else: away down the far side of the circuit, past the other two stations
@@ -268,7 +300,10 @@ class TrainCircuitTest {
     @Test
     @Order(5)
     @DisplayName("A loading building and an unloading building are put up, both standing idle")
-    fun `builds the loading and unloading stations`(cluster: ClusterScope) = cluster.driving(within = 8.minutes) {
+    fun `builds the loading and unloading stations`(cluster: ClusterScope) = cluster.stage(within = PHASE_DEADLINE) {
+        // A client of this test's own, which every helper below reaches through the stage.
+        theClient()
+
         assertEquals(1, trainCount(), "There is no train to load -- did the building phase fail?")
 
         build(loadingSide(), loading = true)
@@ -315,7 +350,10 @@ class TrainCircuitTest {
     @Test
     @Order(6)
     @DisplayName("The train draws in at the loading station and takes the goods aboard")
-    fun `loads the train at the loading station`(cluster: ClusterScope) = cluster.driving(within = 8.minutes) {
+    fun `loads the train at the loading station`(cluster: ClusterScope) = cluster.stage(within = PHASE_DEADLINE) {
+        // A client of this test's own, which every helper below reaches through the stage.
+        theClient()
+
         driveTo(LOADING_NAME, aLapFirst = false, pictures = "to_the_loading_station")
 
         assertEquals(
@@ -349,7 +387,10 @@ class TrainCircuitTest {
     @Test
     @Order(7)
     @DisplayName("The train carries the goods across the circuit and is emptied at the unloading station")
-    fun `unloads the train at the unloading station`(cluster: ClusterScope) = cluster.driving(within = 8.minutes) {
+    fun `unloads the train at the unloading station`(cluster: ClusterScope) = cluster.stage(within = PHASE_DEADLINE) {
+        // A client of this test's own, which every helper below reaches through the stage.
+        theClient()
+
         assertEquals(
             CARGO, cargo(),
             "The train is not carrying anything to unload -- did the loading phase fail?",
@@ -390,7 +431,7 @@ class TrainCircuitTest {
      * @param aLapFirst whether the train has to have got well away before a station's offer is taken
      *   up, which is the difference between a lap of the circuit and a run down the straight
      */
-    private suspend fun driveTo(station: String, aLapFirst: Boolean, pictures: String) {
+    private suspend fun Stage.driveTo(station: String, aLapFirst: Boolean, pictures: String) {
         takeTheControls()
 
         // Under way, and the camera turned to wherever it has actually started going. Which way it
@@ -401,7 +442,7 @@ class TrainCircuitTest {
         // covers the two blocks being waited for, and an unbounded wait on that is a test that stops
         // saying anything at all until its deadline runs out. The state at the moment it gave up is
         // what says which of those it was.
-        val pulledAway = client(ALEX, PULL_AWAY_PATIENCE) { patience ->
+        val pulledAway = client(watcher, PULL_AWAY_PATIENCE) { patience ->
             val setOffFrom = trainAt()
             keyDown(Key.W)
 
@@ -436,7 +477,7 @@ class TrainCircuitTest {
         // view has to be pulled back out of the carriage to see any of this, since the driver is
         // inside it. Only worth doing on a lap, which is the run that has corners to spare.
         if (aLapFirst) {
-            val turning = client(ALEX, CORNER_PATIENCE) { patience -> driveUntilTurning(patience) }
+            val turning = client(watcher, CORNER_PATIENCE) { patience -> driveUntilTurning(patience) }
 
             if (turning) {
                 watchOverTheShoulder(back = true)
@@ -449,9 +490,9 @@ class TrainCircuitTest {
         // thing -- a train at speed is past a station within a few ticks of being told it is coming up
         // -- so the key that takes the offer is pressed on the tick the offer appears rather than a
         // round trip later.
-        val run = client(ALEX, Drive(station, aLapFirst)) { asked -> driveUntilArrived(asked) }
+        val run = client(watcher, Drive(station, aLapFirst)) { asked -> driveUntilArrived(asked) }
 
-        client(ALEX) {
+        client(watcher) {
             keyUp(Key.W)
             keyUp(Key.SPACE)
             awaitTicks(BEAT_TICKS)
@@ -479,7 +520,7 @@ class TrainCircuitTest {
      * out -- and where the train is at the time is asked of the train, since it is not where it was
      * built.
      */
-    private suspend fun takeTheControls() {
+    private suspend fun Stage.takeTheControls() {
         // Both, and not either. Putting the camera anywhere else moves the player, and a passenger
         // that is moved is a passenger that gets off -- but the client goes on believing it holds
         // the controls, because nothing told it otherwise. From there the keys reach the player's
@@ -516,8 +557,8 @@ class TrainCircuitTest {
      * What {@code ControlsHandler} does when escape is held: it forgets the contraption on the
      * client and tells the server the same, which is the half a client-side release leaves out.
      */
-    private suspend fun letGoOfTheControls() {
-        client(ALEX) {
+    private suspend fun Stage.letGoOfTheControls() {
+        client(watcher) {
             val entity = ControlsHandler.getContraption()
             val pos = ControlsHandler.getControlsPos()
 
@@ -537,7 +578,7 @@ class TrainCircuitTest {
      * A passenger goes where the thing carrying them goes, so until they are off it nothing that puts
      * the player somewhere has any effect.
      */
-    private suspend fun stepOffTheTrain() {
+    private suspend fun Stage.stepOffTheTrain() {
         // Letting go of the controls comes first, and it is done the same way they were taken hold
         // of: with another click on them. While they are held, the key that means get off is one of
         // the train's own controls, and the train takes it before the game ever sees it.
@@ -553,7 +594,7 @@ class TrainCircuitTest {
         // there waiting on a world that has stopped.
         repeat(6) {
             if (!riding()) return@repeat
-            client(ALEX) {
+            client(watcher) {
                 keyDown(Key.SHIFT)
                 awaitTicks(20)
                 keyUp(Key.SHIFT)
@@ -574,10 +615,10 @@ class TrainCircuitTest {
      * of small turns each of which has to be looked at, and a round trip apiece would be a minute of
      * turning to find something a foot away.
      */
-    private suspend fun clickOnTrain(wanted: String): Boolean {
+    private suspend fun Stage.clickOnTrain(wanted: String): Boolean {
         val roughly = whereOnTheTrain(wanted)
 
-        return client(ALEX, Aim(wanted, roughly)) { aim -> lookAtAndClick(aim) }
+        return client(watcher, Aim(wanted, roughly)) { aim -> lookAtAndClick(aim) }
     }
 
     /**
@@ -588,7 +629,7 @@ class TrainCircuitTest {
      * moving so slowly that two blocks take longer than the patience allowed. What the train tells
      * its driver separates them, and the rest says which of the first two it was.
      */
-    private suspend fun whatTheDriverSees(): String = client(ALEX) {
+    private suspend fun Stage.whatTheDriverSees(): String = client(watcher) {
         val train = trainEntity()
 
         "driving: " + (ControlsHandler.getContraption() != null) +
@@ -599,16 +640,16 @@ class TrainCircuitTest {
 
     // -- what the client knows -------------------------------------------------------------------
 
-    private suspend fun riding(): Boolean = client(ALEX) {
+    private suspend fun Stage.riding(): Boolean = client(watcher) {
         clientPlayer?.vehicle is CarriageContraptionEntity
     }
 
-    private suspend fun driving(): Boolean = client(ALEX) { ControlsHandler.getContraption() != null }
+    private suspend fun Stage.driving(): Boolean = client(watcher) { ControlsHandler.getContraption() != null }
 
-    private suspend fun whatIsUnderTheCrosshair(): String = client(ALEX) { describeTheCrosshair() }
+    private suspend fun Stage.whatIsUnderTheCrosshair(): String = client(watcher) { describeTheCrosshair() }
 
-    private suspend fun watchOverTheShoulder(back: Boolean) {
-        client(ALEX, back) { third ->
+    private suspend fun Stage.watchOverTheShoulder(back: Boolean) {
+        client(watcher, back) { third ->
             minecraft.options.setCameraType(
                 if (third) net.minecraft.client.CameraType.THIRD_PERSON_BACK
                 else net.minecraft.client.CameraType.FIRST_PERSON
@@ -631,7 +672,7 @@ class TrainCircuitTest {
      * where the train is emptied, both work the other way about. The belt is turned to run the way its
      * goods travel.
      */
-    private suspend fun build(where: BlockPos, loading: Boolean) {
+    private suspend fun Stage.build(where: BlockPos, loading: Boolean) {
         val out = towardsTheTrain(where).opposite
 
         setBlock(where, "create:portable_storage_interface[facing=${towardsTheTrain(where).serializedName}]")
@@ -665,7 +706,7 @@ class TrainCircuitTest {
     }
 
     /** Lays a belt between two ends, which is what the belt item does when it is clicked on both. */
-    private suspend fun belt(from: BlockPos, to: BlockPos) {
+    private suspend fun Stage.belt(from: BlockPos, to: BlockPos) {
         server(from, to) { one, other ->
             BeltConnectorItem.createBelts(serverLevel, one, other)
             true
@@ -673,7 +714,7 @@ class TrainCircuitTest {
     }
 
     /** Leaves a building's belt standing still, which is how it is put up. */
-    private suspend fun stopTheBelt(where: BlockPos) = turnTheMotor(where, 0)
+    private suspend fun Stage.stopTheBelt(where: BlockPos) = turnTheMotor(where, 0)
 
     /**
      * Turns a building's belt the way its goods have to travel.
@@ -681,10 +722,10 @@ class TrainCircuitTest {
      * A belt is laid from the train's end outwards, and that laying is what its plain direction of
      * travel means, so carrying goods back in towards the train is the motor turned the other way.
      */
-    private suspend fun driveTheBelt(where: BlockPos, towardsTheTrain: Boolean) =
+    private suspend fun Stage.driveTheBelt(where: BlockPos, towardsTheTrain: Boolean) =
         turnTheMotor(where, if (towardsTheTrain) -BELT_RPM else BELT_RPM)
 
-    private suspend fun turnTheMotor(where: BlockPos, rpm: Int) {
+    private suspend fun Stage.turnTheMotor(where: BlockPos, rpm: Int) {
         val motor = beltEnd(where).relative(driveSideOf(where).opposite)
 
         server(motor, rpm) { pos, speed ->
@@ -695,7 +736,7 @@ class TrainCircuitTest {
     }
 
     /** What the loading building has to send, put where a chest at the end of a belt would hold it. */
-    private suspend fun fillTheSourceChest() {
+    private suspend fun Stage.fillTheSourceChest() {
         val chest = chestOf(loadingSide())
         runCommand(
             "item replace block ${chest.x} ${chest.y} ${chest.z} container.0 with minecraft:cobblestone $CARGO"
@@ -705,7 +746,7 @@ class TrainCircuitTest {
     // -- building the train ----------------------------------------------------------------------
 
     /** Turns the station over to assembly through its own screen, then gets out of the way. */
-    private suspend fun enterAssemblyMode() {
+    private suspend fun Stage.enterAssemblyMode() {
         rightClickBlock(PARKING)
         waitForScreenNamed("StationScreen")
 
@@ -720,7 +761,7 @@ class TrainCircuitTest {
     }
 
     /** Opens the station again -- which now offers the assembly screen -- and presses the button. */
-    private suspend fun assemble() {
+    private suspend fun Stage.assemble() {
         rightClickBlock(PARKING)
         waitForScreenNamed("AssemblyScreen")
         serverTicks(SETTLE_TICKS)
@@ -742,7 +783,7 @@ class TrainCircuitTest {
      * interfaces take the right -- which is the side facing into the circuit, where whatever loads and
      * empties the train will stand.
      */
-    private suspend fun buildCarriage() {
+    private suspend fun Stage.buildCarriage() {
         for (across in -1..1) {
             for (along in -1..1) {
                 if (across != 0 || along != 0) setBlock(floor(across, along), CASING)
@@ -759,14 +800,14 @@ class TrainCircuitTest {
         setBlock(tank(), "create:fluid_tank")
     }
 
-    private suspend fun glueTheCarriage() {
+    private suspend fun Stage.glueTheCarriage() {
         server(floor(-1, -1), floor(1, 1).above()) { low, high ->
             serverLevel.addFreshEntity(SuperGlueEntity(serverLevel, SuperGlueEntity.span(low, high)))
             true
         }
     }
 
-    private suspend fun clickTrack(track: BlockPos) {
+    private suspend fun Stage.clickTrack(track: BlockPos) {
         rightClickAt(surfaceOf(track), standingBack(track, ASSEMBLY), track)
         serverTicks(SETTLE_TICKS)
     }
@@ -779,20 +820,20 @@ class TrainCircuitTest {
      * Which end is chosen follows the way the player looks at it, so this stands back on the near side
      * and looks along the track towards the end it wants.
      */
-    private suspend fun selectEnd(pos: BlockPos, end: Direction) {
+    private suspend fun Stage.selectEnd(pos: BlockPos, end: Direction) {
         rightClickAt(surfaceOf(pos), standingBack(pos, end), pos)
         serverTicks(SETTLE_TICKS)
     }
 
     /** Clicks the ground where a piece belongs, with the player facing the way it should run. */
-    private suspend fun placeTrackFacing(pos: BlockPos, facing: Direction) {
+    private suspend fun Stage.placeTrackFacing(pos: BlockPos, facing: Direction) {
         val ground = pos.below()
         rightClickAt(topOf(ground), standingBack(ground, facing), ground)
         serverTicks(SETTLE_TICKS)
     }
 
     /** The same, onto track already there, which is how the ring is closed rather than extended. */
-    private suspend fun connectToExisting(pos: BlockPos, facing: Direction) {
+    private suspend fun Stage.connectToExisting(pos: BlockPos, facing: Direction) {
         rightClickAt(surfaceOf(pos), standingBack(pos, facing), pos)
         serverTicks(SETTLE_TICKS)
     }
@@ -800,7 +841,7 @@ class TrainCircuitTest {
     // -- the stations ----------------------------------------------------------------------------
 
     /** Puts a station down and gives it its name while the player is still standing at it. */
-    private suspend fun placeAndName(pos: BlockPos, name: String) {
+    private suspend fun Stage.placeAndName(pos: BlockPos, name: String) {
         placeStation(pos, trackFor(pos), travelAt(pos))
         nameStation(pos, name)
     }
@@ -811,7 +852,7 @@ class TrainCircuitTest {
      * Two clicks: the rail itself, which is what the station will watch and which way along it a train
      * is built, and then the ground a couple of blocks to the side, which is where the station lands.
      */
-    private suspend fun placeStation(pos: BlockPos, track: BlockPos, along: Direction) {
+    private suspend fun Stage.placeStation(pos: BlockPos, track: BlockPos, along: Direction) {
         holdItem("create:track_station")
         serverTicks(SETTLE_TICKS)
 
@@ -824,9 +865,9 @@ class TrainCircuitTest {
     }
 
     /** Opens the station and types its name in, which is the only way a station gets one. */
-    private suspend fun nameStation(pos: BlockPos, name: String) {
+    private suspend fun Stage.nameStation(pos: BlockPos, name: String) {
         // The screen only opens once the client has been told which rails this station belongs to.
-        client(ALEX, pos) { where ->
+        client(watcher, pos) { where ->
             awaitUntil {
                 val be = level.getBlockEntity(where)
                 be is StationBlockEntity && be.station != null
@@ -848,15 +889,15 @@ class TrainCircuitTest {
     // -- where the camera goes -------------------------------------------------------------------
 
     /** High up and off one end, far enough back that the whole circuit is in frame. */
-    private suspend fun watchTheCircuit() {
+    private suspend fun Stage.watchTheCircuit() {
         spectateAt(
-            Vec3(MIDDLE_X.toDouble(), (RAIL_Y + 44).toDouble(), (MIDDLE_Z + 52).toDouble()),
-            Vec3(MIDDLE_X.toDouble(), RAIL_Y.toDouble(), MIDDLE_Z.toDouble()),
+            Vec3(MIDDLE_X.toDouble(), (RAIL_LEVEL + 44).toDouble(), (MIDDLE_Z + 52).toDouble()),
+            Vec3(MIDDLE_X.toDouble(), RAIL_LEVEL.toDouble(), MIDDLE_Z.toDouble()),
         )
     }
 
     /** Stands off the carriage's corner and above it, so the floor and everything on it are in view. */
-    private suspend fun watchTheTrain() {
+    private suspend fun Stage.watchTheTrain() {
         spectateAt(
             Vec3(bogey(0).x + 6.5, (bogey(0).y + 5).toDouble(), bogey(0).z + 6.5),
             middleOf(bogey(0).above()),
@@ -864,7 +905,7 @@ class TrainCircuitTest {
     }
 
     /** Stands off a building's corner and above it, so the whole of it is in view. */
-    private suspend fun watchTheBuilding(where: BlockPos) {
+    private suspend fun Stage.watchTheBuilding(where: BlockPos) {
         val out = towardsTheTrain(where).opposite
 
         // Aimed at the interface the train draws up against rather than at the middle of the building,
@@ -874,7 +915,7 @@ class TrainCircuitTest {
     }
 
     /** Stands well back from a building, with the train it serves in the same view. */
-    private suspend fun watchTheWholeSetup(building: BlockPos) {
+    private suspend fun Stage.watchTheWholeSetup(building: BlockPos) {
         val out = towardsTheTrain(building).opposite
         val side = driveSideOf(building)
 
@@ -892,20 +933,22 @@ class TrainCircuitTest {
      * Beside meaning on the outside of the circuit, which is the side with nothing on it, and beside
      * wherever the train is now rather than where it was built.
      */
-    private suspend fun standBeside() {
+    private suspend fun Stage.standBeside() {
         val controls = whereOnTheTrain("create:controls")
         val out = towardsTheCircuit(controls).opposite
 
-        server(controls, out.ordinal) { where, side ->
+        // Both the client's name and the height of the track are handed over rather than reached
+        // for: this body runs on the server, where the stage it was written beside does not exist.
+        server(controls, out.ordinal, watcher, RAIL_LEVEL) { where, side, name, railLevel ->
             val facing = Direction.entries[side]
-            val player = playerNamed(ALEX)
+            val player = playerNamed(name)
 
             player.setGameMode(GameType.CREATIVE)
             player.abilities.flying = false
             player.onUpdateAbilities()
             player.connection.teleport(
                 where.x + 0.5 + facing.stepX * 3.0,
-                RAIL_Y.toDouble(),
+                railLevel.toDouble(),
                 where.z + 0.5 + facing.stepZ * 3.0,
                 90f,
                 0f,
@@ -925,7 +968,7 @@ class TrainCircuitTest {
      * and a railway laid once stays on the books after the blocks are cleared away -- so the global
      * count says three whatever this circuit did, and says it whether the ring closed or not.
      */
-    private suspend fun graphCount(): Int = server(MIDDLE_X, MIDDLE_Z) { middleX, middleZ ->
+    private suspend fun Stage.graphCount(): Int = server(MIDDLE_X, MIDDLE_Z) { middleX, middleZ ->
         Create.RAILWAYS.trackNetworks.values.count { graph ->
             graph.nodes.any { node ->
                 // Through `location`, not off the node itself. A `TrackNodeLocation` is a `Vec3i`
@@ -940,25 +983,25 @@ class TrainCircuitTest {
         }
     }
 
-    private suspend fun trainCount(): Int = server(ALEX) { Create.RAILWAYS.trains.size }
+    private suspend fun Stage.trainCount(): Int = server(watcher) { Create.RAILWAYS.trains.size }
 
-    private suspend fun hasCurveAt(pos: BlockPos): Boolean = server(pos) { where ->
+    private suspend fun Stage.hasCurveAt(pos: BlockPos): Boolean = server(pos) { where ->
         val be = serverLevel.getBlockEntity(where)
         be is TrackBlockEntity && be.connections.isNotEmpty()
     }
 
-    private suspend fun describe(pos: BlockPos): String =
+    private suspend fun Stage.describe(pos: BlockPos): String =
         server(pos) { where -> serverLevel.getBlockState(where).toString() }
 
-    private suspend fun blockAt(pos: BlockPos): String =
+    private suspend fun Stage.blockAt(pos: BlockPos): String =
         server(pos) { where -> nameOf(serverLevel.getBlockState(where)) }
 
     /** A picture of what track ended up where, so a circuit can be read at a glance. */
-    private suspend fun map(): String = server(MIDDLE_Z) { middle ->
+    private suspend fun Stage.map(): String = server(at(0, RAIL_Y + 59, -10)) { corner ->
         buildString {
-            for (z in middle - 20..middle + 22 step 2) {
-                for (x in 50..76 step 2) {
-                    val at = BlockPos(x, RAIL_Y, z)
+            for (z in 0..42 step 2) {
+                for (x in 0..26 step 2) {
+                    val at = corner.offset(x, 0, z)
                     append(
                         when {
                             serverLevel.getBlockEntity(at) is TrackBlockEntity -> 'C'
@@ -973,7 +1016,7 @@ class TrainCircuitTest {
         }
     }
 
-    private suspend fun stationName(pos: BlockPos): String = server(pos) { where ->
+    private suspend fun Stage.stationName(pos: BlockPos): String = server(pos) { where ->
         val be = serverLevel.getBlockEntity(where)
         if (be !is StationBlockEntity || be.station == null) {
             throw AssertionError("There is no station on the railway at $where but $be")
@@ -982,7 +1025,7 @@ class TrainCircuitTest {
     }
 
     /** Which train, if any, is standing at a station. */
-    private suspend fun trainWaitingAt(pos: BlockPos): String = server(pos) { where ->
+    private suspend fun Stage.trainWaitingAt(pos: BlockPos): String = server(pos) { where ->
         val be = serverLevel.getBlockEntity(where)
         if (be !is StationBlockEntity) return@server "there is no station at $where"
 
@@ -992,34 +1035,34 @@ class TrainCircuitTest {
     }
 
     /** What the assembled train ended up called, which is whatever a station reports when it is there. */
-    private suspend fun theTrainsName(): String =
-        server(ALEX) { Create.RAILWAYS.trains.values.first().name.string }
+    private suspend fun Stage.theTrainsName(): String =
+        server(watcher) { Create.RAILWAYS.trains.values.first().name.string }
 
-    private suspend fun bogeyOffsets(): String = server(PARKING) { where ->
+    private suspend fun Stage.bogeyOffsets(): String = server(PARKING) { where ->
         val be = serverLevel.getBlockEntity(where) as StationBlockEntity
         (com.simibubi.create.e2e.readField(be, "bogeyLocations") as IntArray).contentToString()
     }
 
-    private suspend fun assemblyLength(): String = server(PARKING) { where ->
+    private suspend fun Stage.assemblyLength(): String = server(PARKING) { where ->
         com.simibubi.create.e2e.readField(serverLevel.getBlockEntity(where), "assemblyLength").toString()
     }
 
-    private suspend fun assemblyState(): String = server(PARKING) { where ->
+    private suspend fun Stage.assemblyState(): String = server(PARKING) { where ->
         val be = serverLevel.getBlockEntity(where)
         "assembling=${serverLevel.getBlockState(where)}" +
             " direction=${com.simibubi.create.e2e.readField(be, "assemblyDirection")}"
     }
 
     /** Whether the assembled train carries the named block, which is how the glue is checked. */
-    private suspend fun carriageHolds(wanted: String): Boolean =
+    private suspend fun Stage.carriageHolds(wanted: String): Boolean =
         server(wanted) { name -> name in everythingTheTrainCarries() }
 
     /** Everything the assembled train carries, for when something was left behind. */
-    private suspend fun carriageContents(): String =
-        server(ALEX) { everythingTheTrainCarries().toString() }
+    private suspend fun Stage.carriageContents(): String =
+        server(watcher) { everythingTheTrainCarries().toString() }
 
     /** What is still standing where the carriage was built, which is whatever the train did not take. */
-    private suspend fun leftBehind(): String = server(floor(-1, -1)) { corner ->
+    private suspend fun Stage.leftBehind(): String = server(floor(-1, -1)) { corner ->
         val standing = mutableListOf<String>()
 
         for (across in 0..2) {
@@ -1036,7 +1079,7 @@ class TrainCircuitTest {
     }
 
     /** Where one of the train's own blocks has got to, which is not where it was built. */
-    private suspend fun whereOnTheTrain(wanted: String): BlockPos = server(wanted) { name ->
+    private suspend fun Stage.whereOnTheTrain(wanted: String): BlockPos = server(wanted) { name ->
         for (train in Create.RAILWAYS.trains.values) {
             for (carriage in train.carriages) {
                 val entity = carriage.anyAvailableEntity() ?: continue
@@ -1053,7 +1096,7 @@ class TrainCircuitTest {
     }
 
     /** How much the train is carrying, read the way a schedule's own conditions read it. */
-    private suspend fun cargo(): Int = server(ALEX) {
+    private suspend fun Stage.cargo(): Int = server(watcher) {
         var found = 0
 
         for (train in Create.RAILWAYS.trains.values) {
@@ -1069,7 +1112,7 @@ class TrainCircuitTest {
     }
 
     /** How much of the load a building's chest is holding. */
-    private suspend fun inTheChestOf(building: BlockPos): Int = server(chestOf(building)) { where ->
+    private suspend fun Stage.inTheChestOf(building: BlockPos): Int = server(chestOf(building)) { where ->
         var found = 0
         val chest = serverLevel.getBlockEntity(where)
 
@@ -1086,7 +1129,7 @@ class TrainCircuitTest {
      * Goods that miss their way do not vanish -- they end up on the ground beside the building -- so
      * what is left in the chest and what is lying about between them say where the run broke down.
      */
-    private suspend fun whereTheGoodsWent(): String {
+    private suspend fun Stage.whereTheGoodsWent(): String {
         val left = inTheChestOf(loadingSide())
         val riding = onTheBelt(loadingSide())
 
@@ -1107,7 +1150,7 @@ class TrainCircuitTest {
     }
 
     /** What is riding a building's belt, which is where a load that never arrived tends to sit. */
-    private suspend fun onTheBelt(building: BlockPos): Int =
+    private suspend fun Stage.onTheBelt(building: BlockPos): Int =
         server(beltStart(building), beltEnd(building)) { start, end ->
             var riding = 0
 
@@ -1126,13 +1169,13 @@ class TrainCircuitTest {
     // -- the shape of it -------------------------------------------------------------------------
 
     /** The one piece everything else hangs off, and the point the ring closes back onto. */
-    private fun start() = BlockPos(52, RAIL_Y, 52 + ZONE)
+    private fun Stage.start() = at(2, (RAIL_Y) + 59, 0)
 
     /** The piece of rail each station watches: the middle of its own straight. */
-    private fun trackFor(station: BlockPos) = when (station) {
-        PARKING -> BlockPos(52, RAIL_Y, 62 + ZONE)
-        LOADING -> BlockPos(70, RAIL_Y, 80 + ZONE)
-        else -> BlockPos(88, RAIL_Y, 62 + ZONE)
+    private fun Stage.trackFor(station: BlockPos) = when (station) {
+        PARKING -> at(2, (RAIL_Y) + 59, 10)
+        LOADING -> at(20, (RAIL_Y) + 59, 28)
+        else -> at(38, (RAIL_Y) + 59, 10)
     }
 
     /**
@@ -1142,14 +1185,14 @@ class TrainCircuitTest {
      * straight is the side of the square it stands on and the way that side was laid is the way the
      * train goes past it.
      */
-    private fun travelAt(station: BlockPos) = when (station) {
+    private fun Stage.travelAt(station: BlockPos) = when (station) {
         PARKING -> SIDES[0]
         LOADING -> SIDES[1]
         else -> SIDES[2]
     }
 
     /** The side of the track the middle of the circuit is on, which is the side everything is built on. */
-    private fun insideAt(station: BlockPos) = towardsTheCircuit(trackFor(station))
+    private fun Stage.insideAt(station: BlockPos) = towardsTheCircuit(trackFor(station))
 
     /**
      * Which way a station builds, which is back against the way trains run past it.
@@ -1157,7 +1200,7 @@ class TrainCircuitTest {
      * A station puts the front of its train at its own mark and builds the rest away from there, so a
      * train that comes to rest facing the way it was travelling has been built against it.
      */
-    private fun assemblyAt(station: BlockPos) = travelAt(station).opposite
+    private fun Stage.assemblyAt(station: BlockPos) = travelAt(station).opposite
 
     /**
      * Where the train's own interface ends up when it has drawn in at a station.
@@ -1165,7 +1208,7 @@ class TrainCircuitTest {
      * A train comes to rest at a station exactly where it would have been built there, so this is the
      * carriage's own plan measured out from the station's stretch of rail.
      */
-    private fun trainInterfaceAt(station: BlockPos): BlockPos = trackFor(station)
+    private fun Stage.trainInterfaceAt(station: BlockPos): BlockPos = trackFor(station)
         .relative(assemblyAt(station))
         .above()
         .relative(insideAt(station))
@@ -1178,14 +1221,14 @@ class TrainCircuitTest {
      * Two blocks in from the interface the train presents when it draws up there, which leaves the gap
      * of one between the pair that they reach across to take hold of one another.
      */
-    private fun buildingFor(station: BlockPos) = trainInterfaceAt(station).relative(insideAt(station), 2)
+    private fun Stage.buildingFor(station: BlockPos) = trainInterfaceAt(station).relative(insideAt(station), 2)
 
-    private fun loadingSide() = buildingFor(LOADING)
+    private fun Stage.loadingSide() = buildingFor(LOADING)
 
-    private fun unloadingSide() = buildingFor(UNLOADING)
+    private fun Stage.unloadingSide() = buildingFor(UNLOADING)
 
     /** Which way the middle of the circuit lies from somewhere on its edge. */
-    private fun towardsTheCircuit(pos: BlockPos): Direction {
+    private fun Stage.towardsTheCircuit(pos: BlockPos): Direction {
         val across = MIDDLE_X - pos.x
         val along = MIDDLE_Z - pos.z
 
@@ -1197,7 +1240,7 @@ class TrainCircuitTest {
     }
 
     /** Which way the train lies from a building, which is the way its interface has to look. */
-    private fun towardsTheTrain(building: BlockPos) = towardsTheCircuit(building).opposite
+    private fun Stage.towardsTheTrain(building: BlockPos) = towardsTheCircuit(building).opposite
 
     /**
      * Which way the motor drives a belt from.
@@ -1206,7 +1249,7 @@ class TrainCircuitTest {
      * the way it runs, so a motor put in line with the belt drives nothing -- and each of these
      * buildings runs its belt along a different axis, since each stands on a different side.
      */
-    private fun driveSideOf(where: BlockPos) = towardsTheTrain(where).clockWise
+    private fun Stage.driveSideOf(where: BlockPos) = towardsTheTrain(where).clockWise
 
     /**
      * The funnel beside the interface, which is the one the train's goods pass through.
@@ -1215,24 +1258,24 @@ class TrainCircuitTest {
      * over a belt takes what the belt brings it, or lays what it is given down on it, where one merely
      * standing beside a belt does neither.
      */
-    private fun stationFunnel(where: BlockPos) = where.relative(towardsTheTrain(where).opposite)
+    private fun Stage.stationFunnel(where: BlockPos) = where.relative(towardsTheTrain(where).opposite)
 
     /** The belt runs a step below the interface, so that the funnels at its ends are level with it. */
-    private fun beltStart(where: BlockPos) = stationFunnel(where).below()
+    private fun Stage.beltStart(where: BlockPos) = stationFunnel(where).below()
 
-    private fun beltEnd(where: BlockPos) =
+    private fun Stage.beltEnd(where: BlockPos) =
         beltStart(where).relative(towardsTheTrain(where).opposite, BELT_LENGTH - 1)
 
     /** The funnel at the far end, standing on the other end of the belt with the chest beside it. */
-    private fun farFunnel(where: BlockPos) = beltEnd(where).above()
+    private fun Stage.farFunnel(where: BlockPos) = beltEnd(where).above()
 
-    private fun chestOf(where: BlockPos) = farFunnel(where).relative(towardsTheTrain(where).opposite)
+    private fun Stage.chestOf(where: BlockPos) = farFunnel(where).relative(towardsTheTrain(where).opposite)
 
     /** The rail a bogey is put on, counted out from the piece the station watches. */
-    private fun bogeyTrack(offset: Int) = trackFor(PARKING).relative(ASSEMBLY, offset + 1)
+    private fun Stage.bogeyTrack(offset: Int) = trackFor(PARKING).relative(ASSEMBLY, offset + 1)
 
     /** Where that bogey ends up: one above its rail. */
-    private fun bogey(offset: Int) = bogeyTrack(offset).above()
+    private fun Stage.bogey(offset: Int) = bogeyTrack(offset).above()
 
     /**
      * A square of the carriage floor, counted out from the bogey at its middle.
@@ -1240,7 +1283,7 @@ class TrainCircuitTest {
      * Across is to the right of the way the train is built, and along is the way it is built, so along
      * -1 is towards the front of the train.
      */
-    private fun floor(across: Int, along: Int) =
+    private fun Stage.floor(across: Int, along: Int) =
         bogey(0).relative(Direction.EAST, across).relative(ASSEMBLY, -along)
 
     /**
@@ -1250,12 +1293,12 @@ class TrainCircuitTest {
      * faces the way it is building, and it only counts a seat as the driver's when the controls beside
      * it face that seat -- so the controls face along the train and the seat is the square ahead.
      */
-    private fun controls() = floor(-1, 0).above()
+    private fun Stage.controls() = floor(-1, 0).above()
 
     /** The seat, which is the square the controls face, and where the driver goes. */
-    private fun seat() = floor(-1, -1).above()
+    private fun Stage.seat() = floor(-1, -1).above()
 
-    private fun tank() = floor(-1, 1).above()
+    private fun Stage.tank() = floor(-1, 1).above()
 
     /**
      * The hold, directly behind the interface that fills it.
@@ -1263,14 +1306,14 @@ class TrainCircuitTest {
      * Behind meaning on the train's side of it: the interface reaches out one way to whatever the
      * station has waiting, and puts what it takes into the square at its back.
      */
-    private fun chest() = floor(0, -1).above()
+    private fun Stage.chest() = floor(0, -1).above()
 
-    private fun itemInterface() = floor(1, -1).above()
+    private fun Stage.itemInterface() = floor(1, -1).above()
 
-    private fun fluidInterface() = floor(1, 0).above()
+    private fun Stage.fluidInterface() = floor(1, 0).above()
 
     /** Waits on the server for something to come true, in steps rather than one long sleep. */
-    private suspend fun waitUntil(patience: Int, condition: suspend () -> Boolean) {
+    private suspend fun Stage.waitUntil(patience: Int, condition: suspend () -> Boolean) {
         var waited = 0
 
         while (waited < patience && !condition()) {
@@ -1309,14 +1352,30 @@ class TrainCircuitTest {
 
     companion object {
 
-        const val ZONE = Zones.TRAIN_CIRCUIT
+
+        /**
+         * How long a phase is given.
+         *
+         * Long enough to lay a ring of track by clicking and drive a train round it, and short
+         * enough that a phase which is never going to pass says so quickly. Eight minutes apiece
+         * meant a broken first phase cost the better part of an hour to find out about.
+         */
+        val PHASE_DEADLINE: Duration = 2.minutes
 
         const val SETTLE_TICKS = 10
 
         const val BEAT_TICKS = 5
 
         /** The height the track sits at; the grass it rests on is the block below. */
-        const val RAIL_Y = -60
+        /**
+         * The height the track is laid at, still written in the old world's numbers so the rest of
+         * this class reads as it did -- but one higher than it was.
+         *
+         * Track is laid by clicking the block under where it goes, and in the shared world that was
+         * the second layer of a superflat: there was always something below to click. A stage has
+         * one floor and void beneath it, so the ring sits on the floor rather than in it.
+         */
+        const val RAIL_Y = -59
 
         /** How far a quarter turn reaches, across and along, which is what makes it wide enough to drive. */
         const val CORNER = 8
@@ -1336,9 +1395,19 @@ class TrainCircuitTest {
         const val CIRCUIT_REACH = 40
 
         /** The middle of the square, which every straight faces. */
-        const val MIDDLE_X = 70
+        /**
+         * The middle of the square, in the world rather than on the stage.
+         *
+         * These are compared against what the game reports in world coordinates -- where a railway
+         * graph's nodes are, where a camera's eye goes -- so they cannot be the stage-relative
+         * numbers everything else here is written in.
+         */
+        val Stage.MIDDLE_X: Int get() = at(20, 0, 0).x
 
-        const val MIDDLE_Z = 62 + ZONE
+        val Stage.MIDDLE_Z: Int get() = at(0, 0, 10).z
+
+        /** The height the track is laid at, in the world, for the same reason. */
+        val Stage.RAIL_LEVEL: Int get() = at(0, RAIL_Y + 59, 0).y
 
         /**
          * Where the train is built and where it comes back to. Nothing is loaded or unloaded here.
@@ -1347,13 +1416,13 @@ class TrainCircuitTest {
          * station can only build over the run of plain track ahead of it -- which ends at the next
          * station's mark, or at the first bend.
          */
-        val PARKING = BlockPos(50, RAIL_Y, 62 + ZONE)
+        val Stage.PARKING: BlockPos get() = at(0, (RAIL_Y) + 59, 10)
 
         /** The next straight round: where goods are put aboard. */
-        val LOADING = BlockPos(70, RAIL_Y, 82 + ZONE)
+        val Stage.LOADING: BlockPos get() = at(20, (RAIL_Y) + 59, 30)
 
         /** And the one after that, where they are taken off again. */
-        val UNLOADING = BlockPos(90, RAIL_Y, 62 + ZONE)
+        val Stage.UNLOADING: BlockPos get() = at(40, (RAIL_Y) + 59, 10)
 
         const val PARKING_NAME = "Parking Station"
         const val LOADING_NAME = "Loading Station"

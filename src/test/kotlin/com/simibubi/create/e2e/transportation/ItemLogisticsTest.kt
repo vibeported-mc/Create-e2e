@@ -2,8 +2,6 @@ package com.simibubi.create.e2e.transportation
 
 import com.simibubi.create.content.kinetics.belt.item.BeltConnectorItem
 import com.simibubi.create.content.kinetics.motor.CreativeMotorBlockEntity
-import com.simibubi.create.e2e.Zones
-import com.simibubi.create.e2e.driving
 import com.simibubi.create.e2e.give
 import com.simibubi.create.e2e.lookDownOn
 import com.simibubi.create.e2e.restoreHud
@@ -13,8 +11,11 @@ import com.simibubi.create.e2e.shot
 import com.simibubi.create.e2e.waitForTicks
 import com.simibubi.create.foundation.blockEntity.behaviour.BlockEntityBehaviour
 import com.simibubi.create.foundation.blockEntity.behaviour.filtering.FilteringBehaviour
+import com.simibubi.create.e2e.watcher
 import dev.vibeported.mc.driver.ClusterScope
+import dev.vibeported.mc.driver.Stage
 import dev.vibeported.mc.driver.junit.DrivesMinecraft
+import dev.vibeported.mc.driver.junit.stage
 import dev.vibeported.mc.driver.server
 import net.minecraft.core.BlockPos
 import net.minecraft.core.registries.BuiltInRegistries
@@ -42,7 +43,10 @@ class ItemLogisticsTest {
 
     @Test
     @DisplayName("Chutes, belts and belt funnels all carry items")
-    fun `everything carries`(cluster: ClusterScope) = cluster.driving {
+    fun `everything carries`(cluster: ClusterScope) = cluster.stage {
+        // A client of this test's own, which every helper below reaches through the stage.
+        theClient()
+
         // First, so the chunks these lanes stand in are loaded and ticking while they are built.
         watchTheWholeThing()
 
@@ -138,14 +142,14 @@ class ItemLogisticsTest {
     }
 
     /** Loose item entities around a lane, which is where anything a chute failed to catch ends up. */
-    private suspend fun onTheFloor(z: Int): Int = server(BlockPos(BELT_RUN, BELT_Y, z)) { where ->
+    private suspend fun Stage.onTheFloor(z: Int): Int = server(at(BELT_RUN, (BELT_Y) + 59, z)) { where ->
         serverLevel.getEntitiesOfClass(
             net.minecraft.world.entity.item.ItemEntity::class.java,
             net.minecraft.world.phys.AABB(where).inflate(6.0),
         ).sumOf { it.item.count }
     }
 
-    private suspend fun everythingArrived(): Boolean {
+    private suspend fun Stage.everythingArrived(): Boolean {
         for (item in CARGO) {
             if (countIn(chuteDestination(CHUTE_LANE), item) < COUNT) return false
             if (countIn(unloadingChest(ANDESITE_LANE), item) < COUNT) return false
@@ -156,7 +160,7 @@ class ItemLogisticsTest {
     }
 
     /** The pulleys a belt runs between, and the motor that turns them. */
-    private suspend fun buildBelt(z: Int) {
+    private suspend fun Stage.buildBelt(z: Int) {
         setBlock(beltPos(z, 0), "create:shaft[axis=z]")
         setBlock(beltPos(z, BELT_RUN), "create:shaft[axis=z]")
 
@@ -176,21 +180,21 @@ class ItemLogisticsTest {
      * floor -- so the lane delivered exactly half and the test failed on a mismatch between two
      * chutes rather than on anything it means to check.
      */
-    private suspend fun buildChuteEnds(z: Int, chute: String) {
+    private suspend fun Stage.buildChuteEnds(z: Int, chute: String) {
         setBlock(chutePos(z), chute)
         setBlock(chuteSource(z), "minecraft:chest")
-        setBlock(BlockPos(BELT_RUN, BELT_Y - 1, z), "create:smart_chute")
+        setBlock(at(BELT_RUN, (BELT_Y - 1) + 59, z), "create:smart_chute")
         setBlock(chuteDestination(z), "minecraft:chest")
     }
 
     /** The chests the two funnels of a lane serve. */
-    private suspend fun buildFunnelChests(z: Int) {
+    private suspend fun Stage.buildFunnelChests(z: Int) {
         setBlock(loadingChest(z), "minecraft:chest")
         setBlock(unloadingChest(z), "minecraft:chest")
     }
 
     /** Fills whichever chest starts this lane, once everything downstream is ready for it. */
-    private suspend fun loadSources(z: Int) {
+    private suspend fun Stage.loadSources(z: Int) {
         load(if (z == CHUTE_LANE || z == SMART_CHUTE_LANE) chuteSource(z) else loadingChest(z))
     }
 
@@ -198,19 +202,19 @@ class ItemLogisticsTest {
      * The funnel that empties the first chest onto the belt, and the one that takes what arrives off
      * it again. Both face south, which puts the chest each one serves on its north side.
      */
-    private suspend fun addFunnels(z: Int, metal: String) {
+    private suspend fun Stage.addFunnels(z: Int, metal: String) {
         setBlock(loadingFunnel(z), "create:${metal}_belt_funnel[facing=south,shape=pushing,powered=false]")
         setBlock(unloadingFunnel(z), "create:${metal}_belt_funnel[facing=south,shape=pulling,powered=false]")
     }
 
-    private suspend fun layBelt(z: Int) {
+    private suspend fun Stage.layBelt(z: Int) {
         server(beltPos(z, 0), beltPos(z, BELT_RUN), beltPos(z, BELT_RUN).south(), BELT_SPEED) { from, to, motor, speed ->
             BeltConnectorItem.createBelts(serverLevel, from, to)
             (serverLevel.getBlockEntity(motor) as CreativeMotorBlockEntity).generatedSpeed.setValue(speed)
         }
     }
 
-    private suspend fun setFilter(pos: BlockPos, item: String) {
+    private suspend fun Stage.setFilter(pos: BlockPos, item: String) {
         server(pos, item) { where, what ->
             val filtering = BlockEntityBehaviour.get(serverLevel, where, FilteringBehaviour.TYPE)
                 ?: throw AssertionError("No filter to set at $where")
@@ -218,32 +222,35 @@ class ItemLogisticsTest {
         }
     }
 
-    private suspend fun load(chest: BlockPos) {
+    private suspend fun Stage.load(chest: BlockPos) {
         for (slot in CARGO.indices) give(chest, slot, CARGO[slot], COUNT)
     }
 
-    private suspend fun countIn(pos: BlockPos, item: String): Int =
+    private suspend fun Stage.countIn(pos: BlockPos, item: String): Int =
         server(pos, item) { where, what -> countInContainer(serverLevel, where, what) }
 
-    private fun chuteDestination(z: Int) = BlockPos(BELT_RUN, BELT_Y - 2, z)
+    private fun Stage.chuteDestination(z: Int) = at(BELT_RUN, (BELT_Y - 2) + 59, z)
 
-    private fun chutePos(z: Int) = BlockPos(0, BELT_Y + 1, z)
+    private fun Stage.chutePos(z: Int) = at(0, (BELT_Y + 1) + 59, z)
 
-    private fun chuteSource(z: Int) = BlockPos(0, BELT_Y + 2, z)
+    private fun Stage.chuteSource(z: Int) = at(0, (BELT_Y + 2) + 59, z)
 
-    private fun beltPos(z: Int, along: Int) = BlockPos(along, BELT_Y, z)
+    private fun Stage.beltPos(z: Int, along: Int) = at(along, (BELT_Y) + 59, z)
 
-    private fun loadingFunnel(z: Int) = beltPos(z, 0).above()
+    private fun Stage.loadingFunnel(z: Int) = beltPos(z, 0).above()
 
-    private fun unloadingFunnel(z: Int) = beltPos(z, BELT_RUN).above()
+    private fun Stage.unloadingFunnel(z: Int) = beltPos(z, BELT_RUN).above()
 
-    private fun loadingChest(z: Int) = loadingFunnel(z).north()
+    private fun Stage.loadingChest(z: Int) = loadingFunnel(z).north()
 
-    private fun unloadingChest(z: Int) = unloadingFunnel(z).north()
+    private fun Stage.unloadingChest(z: Int) = unloadingFunnel(z).north()
 
     private companion object {
 
-        const val ZONE = Zones.ITEM_LOGISTICS
+        /** The class's own strip of the shared world, which is now the stage's own corner. */
+        const val ZONE = 0
+
+
 
         const val GROUND = -60
 
@@ -290,8 +297,8 @@ class ItemLogisticsTest {
          * Straight down over the middle of the row: each belt runs across the picture and the four
          * of them stack up it, so nothing stands in front of anything else.
          */
-        suspend fun watchTheWholeThing() {
-            lookDownOn(2.0, (BELT_Y + 10).toDouble(), (ZONE + 6).toDouble())
+        suspend fun Stage.watchTheWholeThing() {
+            lookDownOn(2.0, (BELT_Y + 10 + 59).toDouble(), (ZONE + 6).toDouble())
         }
 
         fun itemNamed(name: String) = BuiltInRegistries.ITEM.getValue(Identifier.parse(name))

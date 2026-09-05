@@ -3,12 +3,8 @@ package com.simibubi.create.e2e.trains
 import com.simibubi.create.AllDataComponents
 import com.simibubi.create.content.trains.station.StationBlock
 import com.simibubi.create.content.trains.station.StationBlockEntity
-import com.simibubi.create.e2e.ALEX
-import com.simibubi.create.e2e.Zones
-import com.simibubi.create.e2e.clearGround
 import com.simibubi.create.e2e.clickWidget
 import com.simibubi.create.e2e.closeWithEscape
-import com.simibubi.create.e2e.driving
 import com.simibubi.create.e2e.holdItem
 import com.simibubi.create.e2e.restoreHud
 import com.simibubi.create.e2e.rightClickAt
@@ -18,10 +14,14 @@ import com.simibubi.create.e2e.setBlock
 import com.simibubi.create.e2e.shot
 import com.simibubi.create.e2e.typeText
 import com.simibubi.create.e2e.waitForScreenNamed
+import com.simibubi.create.e2e.watcher
+import com.simibubi.create.e2e.clearGround
 import dev.vibeported.mc.driver.ClusterScope
+import dev.vibeported.mc.driver.Stage
 import dev.vibeported.mc.driver.ServerScope
 import dev.vibeported.mc.driver.client
 import dev.vibeported.mc.driver.junit.DrivesMinecraft
+import dev.vibeported.mc.driver.junit.stage
 import dev.vibeported.mc.driver.server
 import net.minecraft.core.BlockPos
 import net.minecraft.world.phys.Vec3
@@ -54,11 +54,15 @@ class StationScreenTest {
 
     @Test
     @DisplayName("The name typed onto a train station is the name the station is left with")
-    fun `names the station`(cluster: ClusterScope) = cluster.driving {
-        val origin = BlockPos(60, -58, Zones.STATION_NAMING)
-        build(origin)
+    fun `names the station`(cluster: ClusterScope) = cluster.stage {
+        // A client of this test's own, which every helper below reaches through the stage.
+        theClient()
 
-        rightClickBlock(station(origin))
+        // Each test has ground of its own now, so both build in the same spot on it.
+        val platform = at(0, 1, 0)
+        build(platform)
+
+        rightClickBlock(station(platform))
         waitForScreenNamed("StationScreen")
         shot("station_opened")
 
@@ -73,18 +77,21 @@ class StationScreenTest {
         restoreHud()
 
         assertEquals(
-            NAME, nameOf(origin),
+            NAME, nameOf(platform),
             "The name typed onto the station did not reach it",
         )
     }
 
     @Test
     @DisplayName("Asking a station for a new train puts it into assembly mode and opens that screen")
-    fun `switches to assembly`(cluster: ClusterScope) = cluster.driving {
-        val origin = BlockPos(60, -58, Zones.STATION_ASSEMBLY)
-        build(origin)
+    fun `switches to assembly`(cluster: ClusterScope) = cluster.stage {
+        // A client of this test's own, which every helper below reaches through the stage.
+        theClient()
 
-        rightClickBlock(station(origin))
+        val platform = at(0, 1, 0)
+        build(platform)
+
+        rightClickBlock(station(platform))
         waitForScreenNamed("StationScreen")
 
         // Asking for a new train hands straight over to the other screen rather than closing this
@@ -94,13 +101,13 @@ class StationScreenTest {
         serverTicks(SEND_TICKS)
         shot("station_assembly")
 
-        assertTrue(assembling(origin), "The station did not turn over to assembly mode")
+        assertTrue(assembling(platform), "The station did not turn over to assembly mode")
 
         closeWithEscape()
         serverTicks(SEND_TICKS)
 
         // And which of the two screens it opens from now on is decided by that same state.
-        rightClickBlock(station(origin))
+        rightClickBlock(station(platform))
         waitForScreenNamed("AssemblyScreen")
         closeWithEscape()
         serverTicks(SEND_TICKS)
@@ -108,9 +115,9 @@ class StationScreenTest {
     }
 
     /** A run of rails with a station beside it, put down the way a player puts one down. */
-    private suspend fun build(origin: BlockPos) {
-        clearGround(origin, 8)
+    private suspend fun Stage.build(origin: BlockPos) {
 
+        clearGround(origin, 8)
         // A straight run, so that the station has a stretch of rails to belong to.
         for (along in -TRACK_REACH..TRACK_REACH) {
             setBlock(origin.south(along), "create:track[shape=zo]")
@@ -144,7 +151,7 @@ class StationScreenTest {
 
         // Whether the screen opens at all is the client's decision, and it will not make it until it
         // has been told which stretch of track this station belongs to.
-        client(ALEX, station(origin)) { where ->
+        client(watcher, station(origin)) { where ->
             awaitUntil {
                 val be = level.getBlockEntity(where)
                 be is StationBlockEntity && be.station != null
@@ -152,25 +159,25 @@ class StationScreenTest {
         }
     }
 
-    private suspend fun railsWereChosen(): Boolean = server(ALEX) { name ->
+    private suspend fun Stage.railsWereChosen(): Boolean = server(watcher) { name ->
         playerNamed(name).mainHandItem.has(AllDataComponents.TRACK_TARGETING_ITEM_SELECTED_POS)
     }
 
-    private suspend fun belongsToTrack(origin: BlockPos): Boolean =
+    private suspend fun Stage.belongsToTrack(origin: BlockPos): Boolean =
         server(station(origin)) { pos -> stationAt(pos).station != null }
 
-    private suspend fun nameOf(origin: BlockPos): String = server(station(origin)) { pos ->
+    private suspend fun Stage.nameOf(origin: BlockPos): String = server(station(origin)) { pos ->
         stationAt(pos).station?.name ?: throw AssertionError("The station at $pos belongs to no track")
     }
 
-    private suspend fun assembling(origin: BlockPos): Boolean =
+    private suspend fun Stage.assembling(origin: BlockPos): Boolean =
         server(station(origin)) { pos -> serverLevel.getBlockState(pos).getValue(StationBlock.ASSEMBLING) }
 
     /** Where the station ends up: beside the rails, in the space beyond the block that was clicked. */
-    private fun station(origin: BlockPos) = origin.east()
+    private fun Stage.station(origin: BlockPos) = origin.east()
 
     /** The block whose south face is clicked, which is what decides where the station lands. */
-    private fun anchor(origin: BlockPos) = station(origin).north()
+    private fun Stage.anchor(origin: BlockPos) = station(origin).north()
 
     private companion object {
 

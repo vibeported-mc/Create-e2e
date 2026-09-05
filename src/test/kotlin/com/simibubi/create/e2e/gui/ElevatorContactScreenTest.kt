@@ -1,10 +1,7 @@
 package com.simibubi.create.e2e.gui
 
 import com.simibubi.create.content.contraptions.elevator.ElevatorContactBlockEntity
-import com.simibubi.create.e2e.Zones
-import com.simibubi.create.e2e.clearGround
 import com.simibubi.create.e2e.clickWidget
-import com.simibubi.create.e2e.driving
 import com.simibubi.create.e2e.restoreHud
 import com.simibubi.create.e2e.rightClickBlock
 import com.simibubi.create.e2e.serverTicks
@@ -13,8 +10,11 @@ import com.simibubi.create.e2e.shot
 import com.simibubi.create.e2e.typeText
 import com.simibubi.create.e2e.waitForNoScreen
 import com.simibubi.create.e2e.waitForScreenNamed
+import com.simibubi.create.e2e.clearGround
 import dev.vibeported.mc.driver.ClusterScope
+import dev.vibeported.mc.driver.Stage
 import dev.vibeported.mc.driver.junit.DrivesMinecraft
+import dev.vibeported.mc.driver.junit.stage
 import dev.vibeported.mc.driver.server
 import net.minecraft.core.BlockPos
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -39,7 +39,10 @@ class ElevatorContactScreenTest {
 
     @Test
     @DisplayName("The names typed onto an elevator contact are the ones the floor is left with")
-    fun `names the floor`(cluster: ClusterScope) = cluster.driving {
+    fun `names the floor`(cluster: ClusterScope) = cluster.stage {
+        // A client of this test's own, which every helper below reaches through the stage.
+        theClient()
+
         clearGround(contact(), 4)
         setBlock(contact(), "create:elevator_contact[facing=south]")
         serverTicks(SETTLE_TICKS)
@@ -78,18 +81,17 @@ class ElevatorContactScreenTest {
      * The original passed a getter across; a body cannot capture one, so the field is named instead
      * and read on the server where it lives.
      */
-    private suspend fun onTheBlock(field: String): String = server(contact(), field) { pos, named ->
+    private suspend fun Stage.onTheBlock(field: String): String = server(contact(), field) { pos, named ->
         val be = serverLevel.getBlockEntity(pos) as? ElevatorContactBlockEntity
             ?: throw AssertionError("There is no elevator contact at $pos")
 
         com.simibubi.create.e2e.readField(be, named).toString()
     }
 
-    private fun contact() = BlockPos(60, -58, ZONE)
+    private fun Stage.contact() = at(0, 1, 0)
 
     private companion object {
 
-        const val ZONE = Zones.ELEVATOR_CONTACT
 
         const val SETTLE_TICKS = 5
 

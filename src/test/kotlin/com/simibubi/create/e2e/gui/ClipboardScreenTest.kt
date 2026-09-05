@@ -2,11 +2,7 @@ package com.simibubi.create.e2e.gui
 
 import com.simibubi.create.content.equipment.clipboard.ClipboardEntry
 import com.simibubi.create.content.equipment.clipboard.ClipboardScreen
-import com.simibubi.create.e2e.ALEX
-import com.simibubi.create.e2e.Zones
-import com.simibubi.create.e2e.clearGround
 import com.simibubi.create.e2e.clickWidget
-import com.simibubi.create.e2e.driving
 import com.simibubi.create.e2e.holdItem
 import com.simibubi.create.e2e.restoreHud
 import com.simibubi.create.e2e.rightClickAhead
@@ -16,9 +12,13 @@ import com.simibubi.create.e2e.standAt
 import com.simibubi.create.e2e.typeText
 import com.simibubi.create.e2e.waitForNoScreen
 import com.simibubi.create.e2e.waitForScreenNamed
+import com.simibubi.create.e2e.watcher
+import com.simibubi.create.e2e.clearGround
 import dev.vibeported.mc.driver.ClusterScope
+import dev.vibeported.mc.driver.Stage
 import dev.vibeported.mc.driver.client
 import dev.vibeported.mc.driver.junit.DrivesMinecraft
+import dev.vibeported.mc.driver.junit.stage
 import dev.vibeported.mc.driver.server
 import kotlinx.serialization.Serializable
 import net.minecraft.core.BlockPos
@@ -42,7 +42,10 @@ class ClipboardScreenTest {
 
     @Test
     @DisplayName("What is typed onto a clipboard is on the item, and is there again when it is reopened")
-    fun `keeps what was typed`(cluster: ClusterScope) = cluster.driving {
+    fun `keeps what was typed`(cluster: ClusterScope) = cluster.stage {
+        // A client of this test's own, which every helper below reaches through the stage.
+        theClient()
+
         // Ground of its own and a look at open sky. A clipboard opens on a plain right-click at
         // whatever the crosshair is on, so left standing where the last test finished it opens that
         // test's screen instead -- which is what a blueprint still hanging on a wall did here.
@@ -79,7 +82,7 @@ class ClipboardScreenTest {
 
         // Read off the reopened screen, in a body that can hold the real screen and call the real
         // reader -- only the strings come back.
-        val shown = client(ALEX) {
+        val shown = client(watcher) {
             val screen = minecraft.gui.screen() as ClipboardScreen
             Lines(
                 ClipboardEntry.readAll(screen.content)
@@ -98,14 +101,14 @@ class ClipboardScreenTest {
     }
 
     /** The screen's own close button, rather than escape, since that is the one a player reaches for. */
-    private suspend fun close() {
+    private suspend fun Stage.close() {
         clickWidget("closeBtn")
         waitForNoScreen()
         serverTicks(SEND_TICKS)
     }
 
     /** Every line of every page of the clipboard in the player's hand, read on the server. */
-    private suspend fun linesOnTheItem(): Lines = server(ALEX) { name ->
+    private suspend fun Stage.linesOnTheItem(): Lines = server(watcher) { name ->
         Lines(
             ClipboardEntry.readAll(playerNamed(name).mainHandItem)
                 .flatten()
@@ -123,11 +126,10 @@ class ClipboardScreenTest {
     @Serializable
     private data class Lines(val values: List<String>)
 
-    private fun here() = BlockPos(60, -58, ZONE)
+    private fun Stage.here() = at(0, 1, 0)
 
     private companion object {
 
-        const val ZONE = Zones.CLIPBOARD
 
         const val SETTLE_TICKS = 5
 

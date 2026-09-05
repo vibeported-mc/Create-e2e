@@ -4,11 +4,7 @@ import com.simibubi.create.AllDataComponents
 import com.simibubi.create.content.equipment.zapper.terrainzapper.PlacementOptions
 import com.simibubi.create.content.equipment.zapper.terrainzapper.TerrainBrushes
 import com.simibubi.create.content.equipment.zapper.terrainzapper.TerrainTools
-import com.simibubi.create.e2e.ALEX
-import com.simibubi.create.e2e.Zones
-import com.simibubi.create.e2e.clearGround
 import com.simibubi.create.e2e.clickWidget
-import com.simibubi.create.e2e.driving
 import com.simibubi.create.e2e.holdItem
 import com.simibubi.create.e2e.openScreen
 import com.simibubi.create.e2e.readField
@@ -21,9 +17,13 @@ import com.simibubi.create.e2e.standAt
 import com.simibubi.create.e2e.waitForNoScreen
 import com.simibubi.create.e2e.waitForScreenNamed
 import com.simibubi.create.e2e.widget
+import com.simibubi.create.e2e.watcher
+import com.simibubi.create.e2e.clearGround
 import dev.vibeported.mc.driver.ClusterScope
+import dev.vibeported.mc.driver.Stage
 import dev.vibeported.mc.driver.client
 import dev.vibeported.mc.driver.junit.DrivesMinecraft
+import dev.vibeported.mc.driver.junit.stage
 import dev.vibeported.mc.driver.server
 import net.minecraft.core.BlockPos
 import net.minecraft.world.phys.Vec3
@@ -50,7 +50,10 @@ class WorldshaperScreenTest {
 
     @Test
     @DisplayName("Sneaking and right-clicking the Worldshaper opens its screen, and the settings stick")
-    fun `configures the held item`(cluster: ClusterScope) = cluster.driving {
+    fun `configures the held item`(cluster: ClusterScope) = cluster.stage {
+        // A client of this test's own, which every helper below reaches through the stage.
+        theClient()
+
         // Ground of its own and a look at open sky: the zapper fires at whatever the crosshair is on,
         // and the screen is the only thing this test wants out of the click.
         clearGround(here(), 4)
@@ -118,35 +121,34 @@ class WorldshaperScreenTest {
      * could not.
      */
 
-    private suspend fun shownBrush(): TerrainBrushes =
-        client(ALEX) { readField(openScreen(), "currentBrush") as TerrainBrushes }
+    private suspend fun Stage.shownBrush(): TerrainBrushes =
+        client(watcher) { readField(openScreen(), "currentBrush") as TerrainBrushes }
 
-    private suspend fun shownTool(): TerrainTools =
-        client(ALEX) { readField(openScreen(), "currentTool") as TerrainTools }
+    private suspend fun Stage.shownTool(): TerrainTools =
+        client(watcher) { readField(openScreen(), "currentTool") as TerrainTools }
 
-    private suspend fun shownPlacement(): PlacementOptions =
-        client(ALEX) { readField(openScreen(), "currentPlacement") as PlacementOptions }
+    private suspend fun Stage.shownPlacement(): PlacementOptions =
+        client(watcher) { readField(openScreen(), "currentPlacement") as PlacementOptions }
 
     /* And what the item in the player's hand carries, on the server, where the item really lives. */
 
-    private suspend fun heldBrush(): TerrainBrushes = server(ALEX) { name ->
+    private suspend fun Stage.heldBrush(): TerrainBrushes = server(watcher) { name ->
         playerNamed(name).mainHandItem.getOrDefault(AllDataComponents.SHAPER_BRUSH, TerrainBrushes.Cuboid)
     }
 
-    private suspend fun heldTool(): TerrainTools = server(ALEX) { name ->
+    private suspend fun Stage.heldTool(): TerrainTools = server(watcher) { name ->
         playerNamed(name).mainHandItem.getOrDefault(AllDataComponents.SHAPER_TOOL, TerrainTools.Fill)
     }
 
-    private suspend fun heldPlacement(): PlacementOptions = server(ALEX) { name ->
+    private suspend fun Stage.heldPlacement(): PlacementOptions = server(watcher) { name ->
         playerNamed(name).mainHandItem
             .getOrDefault(AllDataComponents.SHAPER_PLACEMENT_OPTIONS, PlacementOptions.Merged)
     }
 
-    private fun here() = BlockPos(60, -58, ZONE)
+    private fun Stage.here() = at(0, 1, 0)
 
     private companion object {
 
-        const val ZONE = Zones.WORLDSHAPER
 
         /** How long a menu or a deferred screen has to appear before something is wrong. */
         const val SETTLE_TICKS = 5

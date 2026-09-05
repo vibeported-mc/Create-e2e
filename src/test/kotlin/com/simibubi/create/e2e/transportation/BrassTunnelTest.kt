@@ -4,8 +4,6 @@ import com.simibubi.create.content.kinetics.belt.BeltBlockEntity
 import com.simibubi.create.content.kinetics.belt.item.BeltConnectorItem
 import com.simibubi.create.content.kinetics.motor.CreativeMotorBlockEntity
 import com.simibubi.create.content.logistics.tunnel.BrassTunnelBlockEntity.SelectionMode
-import com.simibubi.create.e2e.Zones
-import com.simibubi.create.e2e.driving
 import com.simibubi.create.e2e.give
 import com.simibubi.create.e2e.lookDownOn
 import com.simibubi.create.e2e.restoreHud
@@ -17,8 +15,11 @@ import com.simibubi.create.foundation.blockEntity.behaviour.BlockEntityBehaviour
 import com.simibubi.create.foundation.blockEntity.behaviour.filtering.FilteringBehaviour
 import com.simibubi.create.foundation.blockEntity.behaviour.filtering.SidedFilteringBehaviour
 import com.simibubi.create.foundation.blockEntity.behaviour.scrollValue.ScrollValueBehaviour
+import com.simibubi.create.e2e.watcher
 import dev.vibeported.mc.driver.ClusterScope
+import dev.vibeported.mc.driver.Stage
 import dev.vibeported.mc.driver.junit.DrivesMinecraft
+import dev.vibeported.mc.driver.junit.stage
 import dev.vibeported.mc.driver.server
 import net.minecraft.core.BlockPos
 import net.minecraft.core.Direction
@@ -53,7 +54,10 @@ class BrassTunnelTest {
 
     @Test
     @DisplayName("Split shares what arrives out between the belts")
-    fun split(cluster: ClusterScope) = cluster.driving {
+    fun split(cluster: ClusterScope) = cluster.stage {
+        // A client of this test's own, which every helper below reaches through the stage.
+        theClient()
+
         val arrived = run(SelectionMode.SPLIT, ONE_STACK, feedEveryBelt = false)
 
         assertEquals(COUNT, arrived.total, "Split did not deliver everything that went in: $arrived")
@@ -62,7 +66,10 @@ class BrassTunnelTest {
 
     @Test
     @DisplayName("Forced split shares out between the belts as well")
-    fun `forced split`(cluster: ClusterScope) = cluster.driving {
+    fun `forced split`(cluster: ClusterScope) = cluster.stage {
+        // A client of this test's own, which every helper below reaches through the stage.
+        theClient()
+
         val arrived = run(SelectionMode.FORCED_SPLIT, ONE_STACK, feedEveryBelt = false)
 
         assertEquals(COUNT, arrived.total, "Forced split did not deliver everything that went in: $arrived")
@@ -71,7 +78,10 @@ class BrassTunnelTest {
 
     @Test
     @DisplayName("Round robin takes the belts in turn")
-    fun `round robin`(cluster: ClusterScope) = cluster.driving {
+    fun `round robin`(cluster: ClusterScope) = cluster.stage {
+        // A client of this test's own, which every helper below reaches through the stage.
+        theClient()
+
         val arrived = run(SelectionMode.ROUND_ROBIN, SEPARATE, feedEveryBelt = false)
 
         assertEquals(COUNT, arrived.total, "Round robin did not deliver everything that went in: $arrived")
@@ -80,7 +90,10 @@ class BrassTunnelTest {
 
     @Test
     @DisplayName("Forced round robin takes the belts in turn as well")
-    fun `forced round robin`(cluster: ClusterScope) = cluster.driving {
+    fun `forced round robin`(cluster: ClusterScope) = cluster.stage {
+        // A client of this test's own, which every helper below reaches through the stage.
+        theClient()
+
         val arrived = run(SelectionMode.FORCED_ROUND_ROBIN, SEPARATE, feedEveryBelt = false)
 
         assertEquals(
@@ -92,7 +105,10 @@ class BrassTunnelTest {
 
     @Test
     @DisplayName("Prefer nearest keeps the items on the belt they came in on")
-    fun `prefer nearest`(cluster: ClusterScope) = cluster.driving {
+    fun `prefer nearest`(cluster: ClusterScope) = cluster.stage {
+        // A client of this test's own, which every helper below reaches through the stage.
+        theClient()
+
         val arrived = run(SelectionMode.PREFER_NEAREST, SEPARATE, feedEveryBelt = false)
 
         assertEquals(COUNT, arrived.total, "Prefer nearest did not deliver everything that went in: $arrived")
@@ -101,7 +117,10 @@ class BrassTunnelTest {
 
     @Test
     @DisplayName("Randomize scatters the items but keeps them all")
-    fun randomize(cluster: ClusterScope) = cluster.driving {
+    fun randomize(cluster: ClusterScope) = cluster.stage {
+        // A client of this test's own, which every helper below reaches through the stage.
+        theClient()
+
         val arrived = run(SelectionMode.RANDOMIZE, SEPARATE, feedEveryBelt = false)
 
         assertEquals(COUNT, arrived.total, "Randomize did not deliver everything that went in: $arrived")
@@ -110,7 +129,10 @@ class BrassTunnelTest {
 
     @Test
     @DisplayName("Synchronize lets all three belts through together")
-    fun synchronize(cluster: ClusterScope) = cluster.driving {
+    fun synchronize(cluster: ClusterScope) = cluster.stage {
+        // A client of this test's own, which every helper below reaches through the stage.
+        theClient()
+
         // This one holds items back until every belt of the group has something waiting, so all
         // three are fed rather than just the first.
         val arrived = run(SelectionMode.SYNCHRONIZE, SEPARATE, feedEveryBelt = true)
@@ -123,16 +145,19 @@ class BrassTunnelTest {
 
     @Test
     @DisplayName("Filtered tunnels send each kind of item down its own belt")
-    fun `sorts by filter`(cluster: ClusterScope) = cluster.driving {
-        // Its own patch of the world, past the one each mode took.
-        val origin = ZONE + SelectionMode.entries.size * 8
+    fun `sorts by filter`(cluster: ClusterScope) = cluster.stage {
+        // A client of this test's own, which every helper below reaches through the stage.
+        theClient()
 
-        lookDownOn(3.0, (BELT_Y + 6).toDouble(), (origin + 1).toDouble())
+        // Its own patch of the world, past the one each mode took.
+        val origin = ZONE
+
+        lookDownOn(3.0, (BELT_Y + 6 + 59).toDouble(), (origin + 1).toDouble())
 
         for (belt in 0 until BELTS) buildBelt(origin + belt)
 
         // Everything goes in on the first belt, mixed together.
-        setBlock(BlockPos(0, BELT_Y + 1, origin), "create:chute[facing=down,shape=normal]")
+        setBlock(at(0, (BELT_Y + 1) + 59, origin), "create:chute[facing=down,shape=normal]")
         setBlock(source(origin), "minecraft:chest")
 
         for (kind in SORTED.indices) give(source(origin), kind, SORTED[kind], EACH)
@@ -176,7 +201,7 @@ class BrassTunnelTest {
     }
 
     /** How much has reached the belt its filter sends it to. */
-    private suspend fun sortedSoFar(origin: Int): Int {
+    private suspend fun Stage.sortedSoFar(origin: Int): Int {
         var found = 0
         for (belt in 0 until BELTS) found += countIn(destination(origin + belt), SORTED[belt])
         return found
@@ -189,13 +214,13 @@ class BrassTunnelTest {
      * @param cargo         what to feed it with, which differs by what the mode does
      * @param feedEveryBelt whether every belt is given a load, or only the first
      */
-    private suspend fun run(mode: SelectionMode, cargo: String, feedEveryBelt: Boolean): Arrived {
+    private suspend fun Stage.run(mode: SelectionMode, cargo: String, feedEveryBelt: Boolean): Arrived {
         val origin = originOf(mode)
         val sent = (if (feedEveryBelt) BELTS else 1) * COUNT
 
         // Before building, unlike the original: on a dedicated server only the chunks a player is
         // near are ticked, so a scene built where nobody is looking never moves an item.
-        lookDownOn(3.0, (BELT_Y + 6).toDouble(), (origin + 1).toDouble())
+        lookDownOn(3.0, (BELT_Y + 6 + 59).toDouble(), (origin + 1).toDouble())
 
         for (belt in 0 until BELTS) {
             buildBelt(origin + belt)
@@ -234,7 +259,7 @@ class BrassTunnelTest {
         return arrived
     }
 
-    private suspend fun buildBelt(z: Int) {
+    private suspend fun Stage.buildBelt(z: Int) {
         setBlock(beltPos(z, 0), "create:shaft[axis=z]")
         setBlock(beltPos(z, BELT_RUN), "create:shaft[axis=z]")
 
@@ -244,8 +269,8 @@ class BrassTunnelTest {
     }
 
     /** A chest of items emptying through a chute onto the near end of a belt. */
-    private suspend fun feed(z: Int, cargo: String) {
-        setBlock(BlockPos(0, BELT_Y + 1, z), "create:chute[facing=down,shape=normal]")
+    private suspend fun Stage.feed(z: Int, cargo: String) {
+        setBlock(at(0, (BELT_Y + 1) + 59, z), "create:chute[facing=down,shape=normal]")
         setBlock(source(z), "minecraft:chest")
         giveHeap(source(z), cargo, COUNT)
     }
@@ -257,7 +282,7 @@ class BrassTunnelTest {
      * play gives the belt anyway. Both in one call because the second needs the block entity the
      * first created.
      */
-    private suspend fun layAndEncase(z: Int) {
+    private suspend fun Stage.layAndEncase(z: Int) {
         server(beltPos(z, 0), beltPos(z, BELT_RUN), beltPos(z, TUNNEL_AT)) { from, to, casing ->
             BeltConnectorItem.createBelts(serverLevel, from, to)
 
@@ -267,13 +292,13 @@ class BrassTunnelTest {
         }
     }
 
-    private suspend fun driveTheBelts(origin: Int) {
+    private suspend fun Stage.driveTheBelts(origin: Int) {
         server(motor(origin), BELT_SPEED) { pos, speed ->
             (serverLevel.getBlockEntity(pos) as CreativeMotorBlockEntity).generatedSpeed.setValue(speed)
         }
     }
 
-    private suspend fun setMode(pos: BlockPos, mode: SelectionMode) {
+    private suspend fun Stage.setMode(pos: BlockPos, mode: SelectionMode) {
         // The ordinal rather than the enum: a scroll value behaviour is set by number anyway, and it
         // saves asking whether kotlinx can serialise one of Create's Java enums.
         server(pos, mode.ordinal) { where, ordinal ->
@@ -286,7 +311,7 @@ class BrassTunnelTest {
     }
 
     /** Tells a tunnel to let this one kind of item out of the side its belt runs towards. */
-    private suspend fun keepFor(pos: BlockPos, kind: String) {
+    private suspend fun Stage.keepFor(pos: BlockPos, kind: String) {
         server(pos, kind) { where, what ->
             val filtering = BlockEntityBehaviour.get(serverLevel, where, FilteringBehaviour.TYPE)
             if (filtering !is SidedFilteringBehaviour) {
@@ -297,17 +322,17 @@ class BrassTunnelTest {
     }
 
     /** What reached the chest at the end of each belt, in the order the belts stand. */
-    private suspend fun collect(origin: Int, cargo: String): Arrived = Arrived(
+    private suspend fun Stage.collect(origin: Int, cargo: String): Arrived = Arrived(
         countIn(destination(origin + 0), cargo),
         countIn(destination(origin + 1), cargo),
         countIn(destination(origin + 2), cargo),
     )
 
-    private suspend fun countIn(pos: BlockPos, cargo: String): Int =
+    private suspend fun Stage.countIn(pos: BlockPos, cargo: String): Int =
         server(pos, cargo) { where, what -> countInContainer(serverLevel, where, what) }
 
     /** One heap of it where it stacks, a slot apiece where it does not. */
-    private suspend fun giveHeap(pos: BlockPos, cargo: String, count: Int) {
+    private suspend fun Stage.giveHeap(pos: BlockPos, cargo: String, count: Int) {
         if (stacks(cargo)) {
             give(pos, 0, cargo, count)
             return
@@ -316,21 +341,21 @@ class BrassTunnelTest {
         for (slot in 0 until count) give(pos, slot, cargo, 1)
     }
 
-    private suspend fun stacks(cargo: String): Boolean =
+    private suspend fun Stage.stacks(cargo: String): Boolean =
         server(cargo) { what -> ItemStack(itemNamed(what)).maxStackSize > 1 }
 
-    private fun beltPos(z: Int, along: Int) = BlockPos(along, BELT_Y, z)
+    private fun Stage.beltPos(z: Int, along: Int) = at(along, (BELT_Y) + 59, z)
 
-    private fun motor(origin: Int) = BlockPos(0, BELT_Y, origin - 1)
+    private fun Stage.motor(origin: Int) = at(0, (BELT_Y) + 59, origin - 1)
 
-    private fun tunnel(z: Int) = BlockPos(TUNNEL_AT, BELT_Y + 1, z)
+    private fun Stage.tunnel(z: Int) = at(TUNNEL_AT, (BELT_Y + 1) + 59, z)
 
-    private fun source(z: Int) = BlockPos(0, BELT_Y + 2, z)
+    private fun Stage.source(z: Int) = at(0, (BELT_Y + 2) + 59, z)
 
     /** The funnel standing on the last belt block, taking what arrives into the chest behind it. */
-    private fun unloader(z: Int) = BlockPos(BELT_RUN, BELT_Y + 1, z)
+    private fun Stage.unloader(z: Int) = at(BELT_RUN, (BELT_Y + 1) + 59, z)
 
-    private fun destination(z: Int) = BlockPos(BELT_RUN + 1, BELT_Y + 1, z)
+    private fun Stage.destination(z: Int) = at(BELT_RUN + 1, (BELT_Y + 1) + 59, z)
 
     /**
      * What each belt ended up with.
@@ -348,7 +373,10 @@ class BrassTunnelTest {
 
     private companion object {
 
-        const val ZONE = Zones.BRASS_TUNNEL
+        /** The class's own strip of the shared world, which is now the stage's own corner. */
+        const val ZONE = 0
+
+
 
         const val GROUND = -60
 
@@ -391,7 +419,14 @@ class BrassTunnelTest {
         const val PATIENCE_TICKS = 200
 
         /** Each mode gets a patch of the world to itself, since they all share the one world. */
-        fun originOf(mode: SelectionMode) = ZONE + mode.ordinal * 8
+        /**
+         * Where a mode's belts are laid.
+         *
+         * The same place for every one of them. They used to be given a strip of the shared world
+         * apiece so that eight tests could build without meeting; each has ground of its own now,
+         * and the strips would run clear off the edge of it.
+         */
+        fun originOf(mode: SelectionMode) = ZONE
 
         fun shotName(mode: SelectionMode, when_: String) =
             "brass_tunnel_${mode.name.lowercase()}_$when_"

@@ -6,8 +6,6 @@ import com.simibubi.create.content.logistics.packagePort.PackagePortBlockEntity
 import com.simibubi.create.content.logistics.packagePort.PackagePortTarget.ChainConveyorFrogportTarget
 import com.simibubi.create.content.logistics.packager.PackagerBlockEntity
 import com.simibubi.create.content.logistics.packager.PackagingRequest
-import com.simibubi.create.e2e.Zones
-import com.simibubi.create.e2e.driving
 import com.simibubi.create.e2e.restoreHud
 import com.simibubi.create.e2e.runCommand
 import com.simibubi.create.e2e.serverTicks
@@ -15,8 +13,11 @@ import com.simibubi.create.e2e.setBlock
 import com.simibubi.create.e2e.shot
 import com.simibubi.create.e2e.spectateFrom
 import com.simibubi.create.e2e.waitForTicks
+import com.simibubi.create.e2e.watcher
 import dev.vibeported.mc.driver.ClusterScope
+import dev.vibeported.mc.driver.Stage
 import dev.vibeported.mc.driver.junit.DrivesMinecraft
+import dev.vibeported.mc.driver.junit.stage
 import dev.vibeported.mc.driver.server
 import net.minecraft.core.BlockPos
 import net.minecraft.server.level.ServerLevel
@@ -48,7 +49,10 @@ class LogisticsTest {
 
     @Test
     @DisplayName("A chain conveyor carries a package from one chest to another")
-    fun `chest to chest`(cluster: ClusterScope) = cluster.driving {
+    fun `chest to chest`(cluster: ClusterScope) = cluster.stage {
+        // A client of this test's own, which every helper below reaches through the stage.
+        theClient()
+
         watchFromTheSide()
 
         // Sending: chest, packager, frogport, post. The packager looks up, so it takes from the
@@ -102,7 +106,7 @@ class LogisticsTest {
      * One call, not several: these are live block entities that have to be changed together and then
      * told about it at once, and every intermediate state is one the server would happily tick.
      */
-    private suspend fun stringThePostsTogether() {
+    private suspend fun Stage.stringThePostsTogether() {
         server(SEND.above(3), RECEIVE.above(4), SEND.above(2), RECEIVE.above(3), ADDRESS) {
             postA, postB, sender, receiver, address ->
 
@@ -132,7 +136,7 @@ class LogisticsTest {
     }
 
     /** What an order from a stock keeper eventually becomes. */
-    private suspend fun sendThePackage() {
+    private suspend fun Stage.sendThePackage() {
         server(SEND.above(1), ADDRESS, COUNT) { pos, address, count ->
             val packager = serverLevel.getBlockEntity(pos) as PackagerBlockEntity
 
@@ -150,17 +154,16 @@ class LogisticsTest {
     }
 
     /** How much andesite alloy is sitting in the far chest. */
-    private suspend fun delivered(): Int = server(RECEIVE) { pos -> countIn(serverLevel, pos) }
+    private suspend fun Stage.delivered(): Int = server(RECEIVE) { pos -> countIn(serverLevel, pos) }
 
-    private suspend fun remaining(): Int = server(SEND) { pos -> countIn(serverLevel, pos) }
+    private suspend fun Stage.remaining(): Int = server(SEND) { pos -> countIn(serverLevel, pos) }
 
     private companion object {
 
-        const val ZONE = Zones.LOGISTICS
 
         /** The chest at each end. Everything else is stacked above it. */
-        val SEND: BlockPos = BlockPos(0, -60, ZONE)
-        val RECEIVE: BlockPos = BlockPos(8, -61, ZONE)
+        val Stage.SEND: BlockPos get() = at(0, -1, 0)
+        val Stage.RECEIVE: BlockPos get() = at(8, -2, 0)
 
         const val ADDRESS = "warehouse"
         const val COUNT = 32
@@ -187,10 +190,12 @@ class LogisticsTest {
          * Stands the camera off to the south so both posts, the chain slung between them and the
          * chests underneath are all in frame.
          */
-        suspend fun watchFromTheSide() {
-            val centreX = (SEND.x + RECEIVE.x) / 2.0 + 0.5
-            val centreY = RECEIVE.y + 2.5
-            val centreZ = SEND.z + 0.5
+        suspend fun Stage.watchFromTheSide() {
+            // Relative to the stage, which is what the camera counts from: the chests are at
+            // (0, -1, 0) and (8, -2, 0) on it.
+            val centreX = 4.5
+            val centreY = 0.5
+            val centreZ = 0.5
 
             val eyeX = centreX
             val eyeY = centreY + 4

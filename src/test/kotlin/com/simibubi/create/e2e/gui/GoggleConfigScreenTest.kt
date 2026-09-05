@@ -1,17 +1,18 @@
 package com.simibubi.create.e2e.gui
 
-import com.simibubi.create.e2e.ALEX
 import com.simibubi.create.e2e.clickGui
 import com.simibubi.create.e2e.closeWithEscape
-import com.simibubi.create.e2e.driving
 import com.simibubi.create.e2e.restoreHud
 import com.simibubi.create.e2e.serverTicks
 import com.simibubi.create.e2e.shot
 import com.simibubi.create.e2e.waitForScreenNamed
 import com.simibubi.create.infrastructure.config.AllConfigs
+import com.simibubi.create.e2e.watcher
 import dev.vibeported.mc.driver.ClusterScope
+import dev.vibeported.mc.driver.Stage
 import dev.vibeported.mc.driver.client
 import dev.vibeported.mc.driver.junit.DrivesMinecraft
+import dev.vibeported.mc.driver.junit.stage
 import org.junit.jupiter.api.Assertions.assertNotEquals
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
@@ -33,7 +34,10 @@ class GoggleConfigScreenTest {
 
     @Test
     @DisplayName("Clicking the goggle overlay to a new place is where it is remembered")
-    fun `moves the overlay`(cluster: ClusterScope) = cluster.driving {
+    fun `moves the overlay`(cluster: ClusterScope) = cluster.stage {
+        // A client of this test's own, which every helper below reaches through the stage.
+        theClient()
+
         // Back to where it started, so that the move has somewhere to move it from.
         playerCommand("create overlay reset")
         serverTicks(SETTLE_TICKS)
@@ -45,7 +49,7 @@ class GoggleConfigScreenTest {
         shot("goggle_overlay_opened")
 
         // Put down off to one side of the middle, which is the whole of what this screen does.
-        val middle = client(ALEX) {
+        val middle = client(watcher) {
             Middle(minecraft.window.guiScaledWidth / 2, minecraft.window.guiScaledHeight / 2)
         }
         clickGui((middle.x + MOVED_BY).toDouble(), middle.y.toDouble())
@@ -62,15 +66,15 @@ class GoggleConfigScreenTest {
     }
 
     /** Typed by the player rather than run by the server, since it is the player's own screen it opens. */
-    private suspend fun playerCommand(command: String) {
-        client(ALEX, command) { typed ->
+    private suspend fun Stage.playerCommand(command: String) {
+        client(watcher, command) { typed ->
             clientPlayer?.connection?.sendCommand(typed)
             awaitTicks(2)
         }
     }
 
     /** Where the client currently believes the overlay belongs. */
-    private suspend fun overlayOffsetX(): Int = client(ALEX) {
+    private suspend fun Stage.overlayOffsetX(): Int = client(watcher) {
         AllConfigs.client().overlayOffsetX.get()
     }
 

@@ -1,10 +1,7 @@
 package com.simibubi.create.e2e.gui
 
 import com.simibubi.create.content.kinetics.transmission.sequencer.SequencedGearshiftBlockEntity
-import com.simibubi.create.e2e.Zones
-import com.simibubi.create.e2e.clearGround
 import com.simibubi.create.e2e.clickWidget
-import com.simibubi.create.e2e.driving
 import com.simibubi.create.e2e.readField
 import com.simibubi.create.e2e.restoreHud
 import com.simibubi.create.e2e.rightClickBlock
@@ -17,8 +14,11 @@ import com.simibubi.create.e2e.shot
 import com.simibubi.create.e2e.waitForNoScreen
 import com.simibubi.create.e2e.waitForScreenNamed
 import com.simibubi.create.e2e.widget
+import com.simibubi.create.e2e.clearGround
 import dev.vibeported.mc.driver.ClusterScope
+import dev.vibeported.mc.driver.Stage
 import dev.vibeported.mc.driver.junit.DrivesMinecraft
+import dev.vibeported.mc.driver.junit.stage
 import dev.vibeported.mc.driver.server
 import net.minecraft.core.BlockPos
 import net.minecraft.world.phys.Vec3
@@ -48,7 +48,10 @@ class SequencedGearshiftScreenTest {
 
     @Test
     @DisplayName("The instruction set on a sequenced gearshift's screen is the one the block is left with")
-    fun `configures the first instruction`(cluster: ClusterScope) = cluster.driving {
+    fun `configures the first instruction`(cluster: ClusterScope) = cluster.stage {
+        // A client of this test's own, which every helper below reaches through the stage.
+        theClient()
+
         // Before anything is built, so the chunk is loaded and ticking. `/setblock` will place a
         // block into a chunk nobody is near, but it does not stay resident, and a moment later the
         // block entity the test wants to ask about is not there to ask -- which reads as "there is
@@ -104,7 +107,7 @@ class SequencedGearshiftScreenTest {
      * control holds. The same reflection helper serves here as on the client; it is compiled into
      * this module, which both games load.
      */
-    private suspend fun onTheBlock(part: String): Int = server(gearshift(), part, FIRST_ROW) { pos, named, row ->
+    private suspend fun Stage.onTheBlock(part: String): Int = server(gearshift(), part, FIRST_ROW) { pos, named, row ->
         val be = serverLevel.getBlockEntity(pos) as? SequencedGearshiftBlockEntity
             ?: throw AssertionError("There is no sequenced gearshift at $pos")
 
@@ -114,11 +117,10 @@ class SequencedGearshiftScreenTest {
         }
     }
 
-    private fun gearshift() = BlockPos(60, -58, ZONE)
+    private fun Stage.gearshift() = at(0, 1, 0)
 
     private companion object {
 
-        const val ZONE = Zones.SEQUENCED_GEARSHIFT
 
         const val SETTLE_TICKS = 5
 

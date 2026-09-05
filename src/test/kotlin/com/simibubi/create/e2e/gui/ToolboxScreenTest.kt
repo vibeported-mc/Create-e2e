@@ -1,12 +1,8 @@
 package com.simibubi.create.e2e.gui
 
 import com.simibubi.create.content.equipment.toolbox.ToolboxBlockEntity
-import com.simibubi.create.e2e.ALEX
-import com.simibubi.create.e2e.Zones
-import com.simibubi.create.e2e.clearGround
 import com.simibubi.create.e2e.clickSlot
 import com.simibubi.create.e2e.clickWidget
-import com.simibubi.create.e2e.driving
 import com.simibubi.create.e2e.holdItem
 import com.simibubi.create.e2e.readField
 import com.simibubi.create.e2e.restoreHud
@@ -19,10 +15,14 @@ import com.simibubi.create.e2e.standLookingAt
 import com.simibubi.create.e2e.waitForNoScreen
 import com.simibubi.create.e2e.waitForScreenNamed
 import com.simibubi.create.e2e.closeAnyScreen
+import com.simibubi.create.e2e.watcher
+import com.simibubi.create.e2e.clearGround
 import dev.vibeported.mc.driver.ClusterScope
+import dev.vibeported.mc.driver.Stage
 import dev.vibeported.mc.driver.Key
 import dev.vibeported.mc.driver.client
 import dev.vibeported.mc.driver.junit.DrivesMinecraft
+import dev.vibeported.mc.driver.junit.stage
 import dev.vibeported.mc.driver.keyDown
 import dev.vibeported.mc.driver.keyUp
 import dev.vibeported.mc.driver.server
@@ -54,7 +54,10 @@ class ToolboxScreenTest {
 
     @Test
     @DisplayName("A tool put into a toolbox compartment is the one the toolbox is left holding")
-    fun `takes a tool into a compartment`(cluster: ClusterScope) = cluster.driving {
+    fun `takes a tool into a compartment`(cluster: ClusterScope) = cluster.stage {
+        // A client of this test's own, which every helper below reaches through the stage.
+        theClient()
+
         build()
         holdItem(TOOL)
         serverTicks(SETTLE_TICKS)
@@ -82,7 +85,10 @@ class ToolboxScreenTest {
 
     @Test
     @DisplayName("The toolbox key brings up the ring of nearby toolboxes")
-    fun `opens the ring of nearby toolboxes`(cluster: ClusterScope) = cluster.driving {
+    fun `opens the ring of nearby toolboxes`(cluster: ClusterScope) = cluster.stage {
+        // A client of this test's own, which every helper below reaches through the stage.
+        theClient()
+
         build()
         serverTicks(SETTLE_TICKS)
 
@@ -93,7 +99,7 @@ class ToolboxScreenTest {
         // Held down, not tapped: like the wrench's rotation menu this is a ring worked while the key
         // is down, and its `keyReleased` closes it. Pressing and releasing in one gesture would open
         // and shut it again before anything here could look.
-        client(ALEX) { keyDown(Key(RING_KEY)) }
+        client(watcher) { keyDown(Key(RING_KEY)) }
 
         waitForScreenNamed("RadialToolboxMenu")
         shot("toolbox_ring")
@@ -103,20 +109,20 @@ class ToolboxScreenTest {
         // unlike the wrench's, so the release that shuts the ring can open it straight back up; and
         // `closeAnyScreen` is what makes that stop mattering here, since an escape sent at a screen
         // that already went would open the game menu instead of closing anything.
-        client(ALEX) { keyUp(Key(RING_KEY)) }
+        client(watcher) { keyUp(Key(RING_KEY)) }
         serverTicks(SETTLE_TICKS)
         closeAnyScreen()
         serverTicks(SETTLE_TICKS)
         restoreHud()
     }
 
-    private suspend fun build() {
+    private suspend fun Stage.build() {
         clearGround(toolbox(), 4)
         setBlock(toolbox(), "create:red_toolbox[facing=south]")
     }
 
     /** What the first compartment is holding, as its registry name. */
-    private suspend fun inTheToolbox(): String = server(toolbox()) { pos ->
+    private suspend fun Stage.inTheToolbox(): String = server(toolbox()) { pos ->
         val be = serverLevel.getBlockEntity(pos)
         if (be !is ToolboxBlockEntity) throw AssertionError("There is no toolbox at $pos but $be")
 
@@ -126,11 +132,10 @@ class ToolboxScreenTest {
         BuiltInRegistries.ITEM.getKey(ItemUtil.getStack(compartments, FIRST_COMPARTMENT).item).toString()
     }
 
-    private fun toolbox() = BlockPos(60, -58, ZONE)
+    private fun Stage.toolbox() = at(0, 1, 0)
 
     private companion object {
 
-        const val ZONE = Zones.TOOLBOX
 
         const val SETTLE_TICKS = 10
 

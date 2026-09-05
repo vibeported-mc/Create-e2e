@@ -26,14 +26,6 @@ tasks.withType<KotlinCompile>().configureEach {
 tasks.withType<Test>().configureEach {
     useJUnitPlatform()
 
-    // The whole suite shares one world and one cluster, so the order classes run in is part of what
-    // is being tested rather than an implementation detail. Ordered by @Order, which lets a class
-    // that is known to bring a game down go first -- whatever follows it is then a standing check
-    // that the driver put the cluster back together.
-    systemProperty(
-        "junit.jupiter.testclass.order.default",
-        "org.junit.jupiter.api.ClassOrderer\$OrderAnnotation",
-    )
     testLogging {
         events("passed", "skipped", "failed")
         exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
@@ -152,7 +144,12 @@ neoForge {
         // to generate before the first test can start.
         world = dev.vibeported.mc.driver.gradle.WorldPreset.EMPTY
 
-        // And so at most two tests in flight, because there are two clients to go round.
-        clientPool = 2
+        // And so at most six tests in flight, because there are six clients to go round.
+        //
+        // Six rather than ten, which was measured: ten runs the suite in 4m39s against 5m42s, and
+        // the extra minute buys more of the timing-sensitive failures than it is worth. The floor is
+        // not the pool anyway -- TrainCircuitTest alone takes three and a half minutes, and its
+        // phases are a sequence.
+        clientPool = 6
     }
 }

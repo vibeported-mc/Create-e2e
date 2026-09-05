@@ -1,11 +1,7 @@
 package com.simibubi.create.e2e.gui
 
 import com.simibubi.create.AllKeys
-import com.simibubi.create.e2e.ALEX
-import com.simibubi.create.e2e.Zones
-import com.simibubi.create.e2e.clearGround
 import com.simibubi.create.e2e.closeWithEscape
-import com.simibubi.create.e2e.driving
 import com.simibubi.create.e2e.holdItem
 import com.simibubi.create.e2e.restoreHud
 import com.simibubi.create.e2e.serverTicks
@@ -14,12 +10,16 @@ import com.simibubi.create.e2e.shot
 import com.simibubi.create.e2e.standLookingAt
 import com.simibubi.create.e2e.waitForScreenNamed
 import com.mojang.blaze3d.platform.InputConstants
+import com.simibubi.create.e2e.watcher
+import com.simibubi.create.e2e.clearGround
 import dev.vibeported.mc.driver.ClusterScope
+import dev.vibeported.mc.driver.Stage
 import dev.vibeported.mc.driver.Key
 import dev.vibeported.mc.driver.client
 import dev.vibeported.mc.driver.keyDown
 import dev.vibeported.mc.driver.keyUp
 import dev.vibeported.mc.driver.junit.DrivesMinecraft
+import dev.vibeported.mc.driver.junit.stage
 import net.minecraft.client.KeyMapping
 import net.minecraft.core.BlockPos
 import org.junit.jupiter.api.DisplayName
@@ -44,14 +44,17 @@ class RadialWrenchScreenTest {
 
     @Test
     @DisplayName("Once its key is bound, the wrench's rotation menu opens on the block being looked at")
-    fun `opens on the block being looked at`(cluster: ClusterScope) = cluster.driving {
+    fun `opens on the block being looked at`(cluster: ClusterScope) = cluster.stage {
+        // A client of this test's own, which every helper below reaches through the stage.
+        theClient()
+
         clearGround(stairs(), 4)
         setBlock(stairs(), "minecraft:oak_stairs[facing=south]")
         holdItem("create:wrench")
         serverTicks(SETTLE_TICKS)
 
         // What a player does in the options screen before any of this works.
-        client(ALEX, BOUND_TO) { code ->
+        client(watcher, BOUND_TO) { code ->
             AllKeys.ROTATE_MENU.keybind.key = InputConstants.Type.KEYSYM.getOrCreate(code)
             KeyMapping.resetMapping()
             awaitTicks(2)
@@ -65,7 +68,7 @@ class RadialWrenchScreenTest {
         // sector the cursor is over and closes it. A press and a release in one gesture therefore
         // opens the screen and shuts it again in between two round trips, and what the test then
         // sees is a screen that never opened.
-        client(ALEX, BOUND_TO) { code -> keyDown(Key(code)) }
+        client(watcher, BOUND_TO) { code -> keyDown(Key(code)) }
 
         waitForScreenNamed("RadialWrenchMenu")
         shot("radial_wrench")
@@ -73,16 +76,15 @@ class RadialWrenchScreenTest {
         // Escape rather than the release, so nothing is submitted; the key is then let go against no
         // screen at all, which leaves the client holding nothing down for whatever runs next.
         closeWithEscape()
-        client(ALEX, BOUND_TO) { code -> keyUp(Key(code)) }
+        client(watcher, BOUND_TO) { code -> keyUp(Key(code)) }
         serverTicks(SETTLE_TICKS)
         restoreHud()
     }
 
-    private fun stairs() = BlockPos(60, -58, ZONE)
+    private fun Stage.stairs() = at(0, 1, 0)
 
     private companion object {
 
-        const val ZONE = Zones.RADIAL_WRENCH
 
         const val SETTLE_TICKS = 10
 

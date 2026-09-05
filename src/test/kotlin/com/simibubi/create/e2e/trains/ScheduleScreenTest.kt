@@ -2,12 +2,8 @@ package com.simibubi.create.e2e.trains
 
 import com.simibubi.create.AllDataComponents
 import com.simibubi.create.content.trains.schedule.Schedule
-import com.simibubi.create.e2e.ALEX
-import com.simibubi.create.e2e.Zones
-import com.simibubi.create.e2e.clearGround
 import com.simibubi.create.e2e.clickGui
 import com.simibubi.create.e2e.clickWidget
-import com.simibubi.create.e2e.driving
 import com.simibubi.create.e2e.holdItem
 import com.simibubi.create.e2e.openScreen
 import com.simibubi.create.e2e.readField
@@ -21,9 +17,13 @@ import com.simibubi.create.e2e.standAt
 import com.simibubi.create.e2e.waitForNoScreen
 import com.simibubi.create.e2e.waitForScreenNamed
 import com.simibubi.create.e2e.widget
+import com.simibubi.create.e2e.watcher
+import com.simibubi.create.e2e.clearGround
 import dev.vibeported.mc.driver.ClusterScope
+import dev.vibeported.mc.driver.Stage
 import dev.vibeported.mc.driver.client
 import dev.vibeported.mc.driver.junit.DrivesMinecraft
+import dev.vibeported.mc.driver.junit.stage
 import dev.vibeported.mc.driver.server
 import kotlinx.serialization.Serializable
 import net.minecraft.core.BlockPos
@@ -53,7 +53,10 @@ class ScheduleScreenTest {
 
     @Test
     @DisplayName("Looping is turned off, saved, read back, and turned on again")
-    fun `carries the loop setting both ways`(cluster: ClusterScope) = cluster.driving {
+    fun `carries the loop setting both ways`(cluster: ClusterScope) = cluster.stage {
+        // A client of this test's own, which every helper below reaches through the stage.
+        theClient()
+
         giveSchedule()
         openIt()
         shot("schedule_opened")
@@ -118,7 +121,10 @@ class ScheduleScreenTest {
     @ParameterizedTest(name = "{0}")
     @MethodSource("instructionTypes")
     @DisplayName("Every instruction the editor offers can be picked and lands on the schedule")
-    fun `picks every instruction`(id: String, cluster: ClusterScope) = cluster.driving {
+    fun `picks every instruction`(id: String, cluster: ClusterScope) = cluster.stage {
+        // A client of this test's own, which every helper below reaches through the stage.
+        theClient()
+
         val wanted = instructionTypes().indexOf(id)
 
         giveSchedule()
@@ -155,7 +161,10 @@ class ScheduleScreenTest {
     @ParameterizedTest(name = "{0}")
     @MethodSource("conditionTypes")
     @DisplayName("Every wait condition the editor offers can be picked and lands on the schedule")
-    fun `picks every condition`(id: String, cluster: ClusterScope) = cluster.driving {
+    fun `picks every condition`(id: String, cluster: ClusterScope) = cluster.stage {
+        // A client of this test's own, which every helper below reaches through the stage.
+        theClient()
+
         val wanted = conditionTypes().indexOf(id)
 
         giveSchedule()
@@ -187,7 +196,10 @@ class ScheduleScreenTest {
 
     @Test
     @DisplayName("A destination can be added to a schedule and is written onto the item")
-    fun `adds an entry`(cluster: ClusterScope) = cluster.driving {
+    fun `adds an entry`(cluster: ClusterScope) = cluster.stage {
+        // A client of this test's own, which every helper below reaches through the stage.
+        theClient()
+
         giveSchedule()
         openIt()
 
@@ -208,7 +220,7 @@ class ScheduleScreenTest {
     }
 
     /** An empty schedule in the player's hand, ready to be right-clicked. */
-    private suspend fun giveSchedule() {
+    private suspend fun Stage.giveSchedule() {
         // Ground of its own and a look at open sky. A schedule opens on a plain right-click at
         // whatever the crosshair is on, so a player left in front of somebody else's scene opens
         // that scene's screen instead of this one.
@@ -228,13 +240,13 @@ class ScheduleScreenTest {
      * No sneaking for this one: a schedule opens on a plain right-click and does nothing on a
      * sneaking one.
      */
-    private suspend fun openIt() {
+    private suspend fun Stage.openIt() {
         rightClickAhead()
         waitForScreenNamed("ScheduleScreen")
     }
 
     /** Accepts the screen, which closes the container and is what sends the schedule to the server. */
-    private suspend fun close() {
+    private suspend fun Stage.close() {
         clickWidget("confirmButton")
         waitForNoScreen()
         serverTicks(SETTLE_TICKS)
@@ -246,7 +258,7 @@ class ScheduleScreenTest {
      * it watches for one opens an editor on a new destination, and accepting that editor makes it an
      * entry.
      */
-    private suspend fun addDestinationEntry() {
+    private suspend fun Stage.addDestinationEntry() {
         clickInTheCardList(ADD_ENTRY_X, ADD_ENTRY_Y)
         shot("schedule_editing_entry")
 
@@ -259,7 +271,7 @@ class ScheduleScreenTest {
      * widgets -- so this is a click at a place, not a click on a button. The offsets are from the
      * screen's own corner, which is where the list is laid out from.
      */
-    private suspend fun clickInTheCardList(x: Int, y: Int) {
+    private suspend fun Stage.clickInTheCardList(x: Int, y: Int) {
         clickGui(
             (screenNumber("leftPos") + x).toDouble(),
             (screenNumber("topPos") + y).toDouble(),
@@ -273,12 +285,12 @@ class ScheduleScreenTest {
      * Asked of whatever screen is open rather than of one remembered from earlier, since taking a
      * picture resizes the window and a screen laid out again is not always the same object.
      */
-    private suspend fun shownSchedule(): Summary = client(ALEX) {
+    private suspend fun Stage.shownSchedule(): Summary = client(watcher) {
         summarise(readField(openScreen(), "schedule") as Schedule)
     }
 
     /** The schedule written onto the held item, read on the server where the item really lives. */
-    private suspend fun savedSchedule(): Summary = server(ALEX) { name ->
+    private suspend fun Stage.savedSchedule(): Summary = server(watcher) { name ->
         val player = playerNamed(name)
         val tag = player.mainHandItem.get(AllDataComponents.TRAIN_SCHEDULE)
             ?: return@server Summary(present = false)
@@ -302,11 +314,10 @@ class ScheduleScreenTest {
         val firstCondition: String? = null,
     )
 
-    private fun here() = BlockPos(60, -58, ZONE)
+    private fun Stage.here() = at(0, 1, 0)
 
     companion object {
 
-        const val ZONE = Zones.SCHEDULE
 
         /** Long enough for the server to be asked for a menu and to answer. */
         const val SETTLE_TICKS = 10

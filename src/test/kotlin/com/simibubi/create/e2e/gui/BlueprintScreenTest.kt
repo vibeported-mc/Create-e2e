@@ -1,12 +1,8 @@
 package com.simibubi.create.e2e.gui
 
 import com.simibubi.create.content.equipment.blueprint.BlueprintEntity
-import com.simibubi.create.e2e.ALEX
-import com.simibubi.create.e2e.Zones
-import com.simibubi.create.e2e.clearGround
 import com.simibubi.create.e2e.clickSlot
 import com.simibubi.create.e2e.clickWidget
-import com.simibubi.create.e2e.driving
 import com.simibubi.create.e2e.holdItem
 import com.simibubi.create.e2e.invokeOn
 import com.simibubi.create.e2e.restoreHud
@@ -19,9 +15,13 @@ import com.simibubi.create.e2e.shot
 import com.simibubi.create.e2e.slotHolding
 import com.simibubi.create.e2e.waitForNoScreen
 import com.simibubi.create.e2e.waitForScreenNamed
+import com.simibubi.create.e2e.watcher
+import com.simibubi.create.e2e.clearGround
 import dev.vibeported.mc.driver.ClusterScope
+import dev.vibeported.mc.driver.Stage
 import dev.vibeported.mc.driver.client
 import dev.vibeported.mc.driver.junit.DrivesMinecraft
+import dev.vibeported.mc.driver.junit.stage
 import dev.vibeported.mc.driver.server
 import net.minecraft.core.BlockPos
 import net.minecraft.core.registries.BuiltInRegistries
@@ -51,11 +51,14 @@ class BlueprintScreenTest {
 
     @Test
     @DisplayName("An item put into a crafting blueprint's grid is the one the blueprint is left holding")
-    fun `takes an ingredient`(cluster: ClusterScope) = cluster.driving {
+    fun `takes an ingredient`(cluster: ClusterScope) = cluster.stage {
+        // A client of this test's own, which every helper below reaches through the stage.
+        theClient()
+
         clearGround(wall(), 4)
         setBlock(wall(), "minecraft:stone")
         holdItem("create:crafting_blueprint")
-        runCommand("item replace entity $ALEX hotbar.1 with $INGREDIENT 1")
+        runCommand("item replace entity $watcher hotbar.1 with $INGREDIENT 1")
         serverTicks(SETTLE_TICKS)
 
         // Hung on the wall the way a player hangs one: the blueprint in hand, and the wall clicked.
@@ -87,15 +90,15 @@ class BlueprintScreenTest {
         )
     }
 
-    private suspend fun selectHotbar(slot: Int) {
-        client(ALEX, slot) { which ->
+    private suspend fun Stage.selectHotbar(slot: Int) {
+        client(watcher, slot) { which ->
             clientPlayer?.inventory?.setSelectedSlot(which)
             awaitTicks(1)
         }
     }
 
     /** What the blueprint's first square is remembering, as a registry name. */
-    private suspend fun inTheBlueprint(): String = server(wall()) { pos ->
+    private suspend fun Stage.inTheBlueprint(): String = server(wall()) { pos ->
         val hanging = serverLevel.getEntitiesOfClass(BlueprintEntity::class.java, AABB(pos).inflate(3.0))
         if (hanging.isEmpty()) throw AssertionError("No blueprint was hung on the wall at $pos")
 
@@ -107,14 +110,13 @@ class BlueprintScreenTest {
         BuiltInRegistries.ITEM.getKey(ItemUtil.getStack(items, 0).item).toString()
     }
 
-    private fun wall() = BlockPos(60, -57, ZONE)
+    private fun Stage.wall() = at(0, 2, 0)
 
     /** The space in front of the wall, where a blueprint clicked onto its south face ends up. */
-    private fun blueprint() = wall().south()
+    private fun Stage.blueprint() = wall().south()
 
     private companion object {
 
-        const val ZONE = Zones.BLUEPRINT
 
         const val SETTLE_TICKS = 10
 

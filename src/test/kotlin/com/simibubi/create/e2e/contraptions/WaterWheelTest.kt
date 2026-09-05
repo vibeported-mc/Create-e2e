@@ -1,16 +1,17 @@
 package com.simibubi.create.e2e.contraptions
 
 import com.simibubi.create.content.kinetics.base.KineticBlockEntity
-import com.simibubi.create.e2e.Zones
-import com.simibubi.create.e2e.clearGround
-import com.simibubi.create.e2e.driving
 import com.simibubi.create.e2e.restoreHud
 import com.simibubi.create.e2e.serverTicks
 import com.simibubi.create.e2e.setBlock
 import com.simibubi.create.e2e.shot
 import com.simibubi.create.e2e.spectateAt
+import com.simibubi.create.e2e.watcher
+import com.simibubi.create.e2e.clearGround
 import dev.vibeported.mc.driver.ClusterScope
+import dev.vibeported.mc.driver.Stage
 import dev.vibeported.mc.driver.junit.DrivesMinecraft
+import dev.vibeported.mc.driver.junit.stage
 import dev.vibeported.mc.driver.server
 import net.minecraft.core.BlockPos
 import net.minecraft.core.registries.BuiltInRegistries
@@ -35,13 +36,17 @@ class WaterWheelTest {
 
     @Test
     @DisplayName("A creative motor turns a small water wheel")
-    fun `small water wheel`(cluster: ClusterScope) = cluster.driving {
-        val wheel = BlockPos(3, GROUND, ZONE)
+    fun `small water wheel`(cluster: ClusterScope) = cluster.stage {
+        // A client of this test's own, which every helper below reaches through the stage.
+        theClient()
+
+        val wheel = at(0, (GROUND) + 59, ZONE)
         // The motor sits on the wheel's north face, where the wheel's shaft comes out. facing is the
         // axis the shaft runs along, so both blocks face along z and meet.
         val motor = wheel.north()
 
         clearGround(wheel, 6)
+        clearGround(BlockPos(wheel.x, GROUND, wheel.z), 6)
         watch(wheel)
 
         setBlock(wheel, "create:water_wheel[facing=north]")
@@ -59,9 +64,15 @@ class WaterWheelTest {
 
     @Test
     @DisplayName("A creative motor turns a large water wheel")
-    fun `large water wheel`(cluster: ClusterScope) = cluster.driving {
-        // The large wheel is 3x3 around its centre, so it has to stand a block clear of the ground.
-        val wheel = BlockPos(3, GROUND + 1, ZONE + 16)
+    fun `large water wheel`(cluster: ClusterScope) = cluster.stage {
+        // A client of this test's own, which every helper below reaches through the stage.
+        theClient()
+
+        // The large wheel is 3x3 around its centre, so nothing may be directly under it: the ring it
+        // builds needs that block. A stage lays a stone floor across the whole of itself, so this
+        // one stands two clear of it rather than one, which is the same air the original made for
+        // itself by clearing the ground first.
+        val wheel = at(0, 2, ZONE + 16)
         val motor = wheel.north()
 
         // Cleared about the ground rather than about the wheel. `clearGround` lays its stone floor a
@@ -69,7 +80,6 @@ class WaterWheelTest {
         // the way of the ring it builds -- so it puts itself up and takes itself straight down again,
         // leaving air where the wheel was. The originals never met this: their world was fresh, and
         // nothing had to be cleared at all.
-        clearGround(BlockPos(wheel.x, GROUND, wheel.z), 6)
         watch(wheel)
 
         setBlock(wheel, "create:large_water_wheel[axis=z]")
@@ -92,7 +102,7 @@ class WaterWheelTest {
     }
 
     /** Stands off the south-east corner so the shot catches the wheel's face and the motor beside it. */
-    private suspend fun watch(wheel: BlockPos) {
+    private suspend fun Stage.watch(wheel: BlockPos) {
         spectateAt(
             Vec3(wheel.x + 4.5, wheel.y + 2.0, wheel.z + 4.5),
             Vec3.atCenterOf(wheel),
@@ -106,7 +116,7 @@ class WaterWheelTest {
      * a substring of both "large_water_wheel" and "water_wheel_structure", so a loose comparison
      * would pass for the wrong block.
      */
-    private suspend fun assertBlock(pos: BlockPos, expected: String) {
+    private suspend fun Stage.assertBlock(pos: BlockPos, expected: String) {
         val found = server(pos) { where ->
             BuiltInRegistries.BLOCK.getKey(serverLevel.getBlockState(where).block).toString()
         }
@@ -119,7 +129,7 @@ class WaterWheelTest {
      * Two readings in one call rather than two: a kinetic network is live state, and asking about it
      * twice from another process is asking about two different moments.
      */
-    private suspend fun assertDriven(wheelPos: BlockPos, motorPos: BlockPos) {
+    private suspend fun Stage.assertDriven(wheelPos: BlockPos, motorPos: BlockPos) {
         val report = server(wheelPos, motorPos) { wheel, motor ->
             val a = kineticAt(serverLevel, wheel)
             val b = kineticAt(serverLevel, motor)
@@ -149,7 +159,10 @@ class WaterWheelTest {
 
     private companion object {
 
-        const val ZONE = Zones.WATER_WHEEL
+        /** The class's own strip of the shared world, which is now the stage's own corner. */
+        const val ZONE = 0
+
+
 
         /**
          * The superflat preset the driver seeds puts grass at y=-61, so the first free block above
