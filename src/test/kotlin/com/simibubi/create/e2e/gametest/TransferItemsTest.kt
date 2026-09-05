@@ -1,9 +1,7 @@
 package com.simibubi.create.e2e.gametest
 
-import com.simibubi.create.e2e.driving
-import com.simibubi.create.e2e.restoreHud
+import dev.vibeported.mc.driver.junit.stage
 import com.simibubi.create.e2e.serverTicks
-import com.simibubi.create.e2e.shot
 import dev.vibeported.mc.driver.ClusterScope
 import dev.vibeported.mc.driver.junit.DrivesMinecraft
 import dev.vibeported.mc.driver.server
@@ -27,35 +25,35 @@ class TransferItemsTest {
 
     @Test
     @DisplayName("A transaction that is thrown away leaves a container as it found it")
-    fun `container handler honours rollback`(cluster: ClusterScope) = cluster.driving {
-        val scene = stage(GROUP, "belt_coaster")
+    fun `container handler honours rollback`(cluster: ClusterScope) = cluster.stage {
+        val scene = scene(GROUP, "belt_coaster")
         val chest = scene.at(2, 2, 2)
 
         setBlockAt(chest, "minecraft:chest")
         serverTicks(SETTLE)
-        shot("container_rollback")
+        scene.shot("container_rollback")
 
         assertEquals("", rollbackComplaint(chest), "The container did not honour the transactions")
 
-        restoreHud()
+        scene.restoreHud()
     }
 
     @Test
     @DisplayName("A container carried on a contraption arrives with what it left with")
-    fun `contraption storage round trip`(cluster: ClusterScope) = cluster.driving {
-        val scene = stage(GROUP, "belt_coaster")
+    fun `contraption storage round trip`(cluster: ClusterScope) = cluster.stage {
+        val scene = scene(GROUP, "belt_coaster")
         val chest = scene.at(2, 2, 2)
         val barrel = scene.at(3, 2, 2)
 
         setBlockAt(chest, "minecraft:chest")
         setBlockAt(barrel, "minecraft:barrel")
         serverTicks(SETTLE)
-        shot("contraption_storage")
+        scene.shot("contraption_storage")
 
         assertEquals("", roundTripComplaint(chest, "chest"), "The chest lost something on the way round")
         assertEquals("", roundTripComplaint(barrel, "barrel"), "The barrel lost something on the way round")
 
-        restoreHud()
+        scene.restoreHud()
     }
 
     /**

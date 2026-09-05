@@ -1,9 +1,7 @@
 package com.simibubi.create.e2e.gametest
 
-import com.simibubi.create.e2e.driving
-import com.simibubi.create.e2e.restoreHud
+import dev.vibeported.mc.driver.junit.stage
 import com.simibubi.create.e2e.serverTicks
-import com.simibubi.create.e2e.shot
 import dev.vibeported.mc.driver.ClusterScope
 import dev.vibeported.mc.driver.junit.DrivesMinecraft
 import net.minecraft.core.BlockPos
@@ -24,8 +22,8 @@ class ContraptionsTest {
 
     @Test
     @DisplayName("A contraption's dispensers fire their arrows and keep what is left")
-    fun `arrow dispenser`(cluster: ClusterScope) = cluster.driving {
-        val scene = stage(GROUP, "arrow_dispenser")
+    fun `arrow dispenser`(cluster: ClusterScope) = cluster.stage {
+        val scene = scene(GROUP, "arrow_dispenser")
 
         val lever = scene.at(2, 3, 1)
         pullLever(lever)
@@ -49,13 +47,13 @@ class ContraptionsTest {
             containerHolds(dispenser, "minecraft:arrow")
         }
 
-        restoreHud()
+        scene.restoreHud()
     }
 
     @Test
     @DisplayName("A harvester on a bearing brings in a crop")
-    fun `crop farming`(cluster: ClusterScope) = cluster.driving {
-        val scene = stage(GROUP, "crop_farming")
+    fun `crop farming`(cluster: ClusterScope) = cluster.stage {
+        val scene = scene(GROUP, "crop_farming")
 
         pullLever(scene.at(4, 3, 1))
 
@@ -68,13 +66,13 @@ class ContraptionsTest {
             containerHoldsAnyOf(output, listOf("minecraft:wheat", "minecraft:potato", "minecraft:carrot"))
         }
 
-        restoreHud()
+        scene.restoreHud()
     }
 
     @Test
     @DisplayName("A moving interface empties the barrel it is carrying")
-    fun `mounted item extract`(cluster: ClusterScope) = cluster.driving {
-        val scene = stage(GROUP, "mounted_item_extract")
+    fun `mounted item extract`(cluster: ClusterScope) = cluster.stage {
+        val scene = scene(GROUP, "mounted_item_extract")
 
         val barrel = scene.at(1, 3, 2)
         val lever = scene.at(1, 5, 1)
@@ -100,13 +98,13 @@ class ContraptionsTest {
             "The barrel was not emptied; it still holds ${contentsOf(barrel)}",
         )
 
-        restoreHud()
+        scene.restoreHud()
     }
 
     @Test
     @DisplayName("A moving interface drains the tank it is carrying")
-    fun `mounted fluid drain`(cluster: ClusterScope) = cluster.driving {
-        val scene = stage(GROUP, "mounted_fluid_drain")
+    fun `mounted fluid drain`(cluster: ClusterScope) = cluster.stage {
+        val scene = scene(GROUP, "mounted_fluid_drain")
 
         val tank = scene.at(1, 3, 2)
         val lever = scene.at(1, 5, 1)
@@ -130,13 +128,13 @@ class ContraptionsTest {
 
         assertTrue(tankHolds(tank).isEmpty, "The tank was not drained; it still holds ${tankHolds(tank)}")
 
-        restoreHud()
+        scene.restoreHud()
     }
 
     @Test
     @DisplayName("A plough turns the dirt it is dragged over into farmland")
-    fun `ploughing`(cluster: ClusterScope) = cluster.driving {
-        val scene = stage(GROUP, "ploughing")
+    fun `ploughing`(cluster: ClusterScope) = cluster.stage {
+        val scene = scene(GROUP, "ploughing")
 
         pullLever(scene.at(3, 3, 2))
 
@@ -145,13 +143,13 @@ class ContraptionsTest {
             blockAt(dirt) == "minecraft:farmland"
         }
 
-        restoreHud()
+        scene.restoreHud()
     }
 
     @Test
     @DisplayName("Redstone contacts on a contraption trip as they pass")
-    fun `redstone contacts`(cluster: ClusterScope) = cluster.driving {
-        val scene = stage(GROUP, "redstone_contacts")
+    fun `redstone contacts`(cluster: ClusterScope) = cluster.stage {
+        val scene = scene(GROUP, "redstone_contacts")
 
         pullLever(scene.at(1, 3, 2))
 
@@ -160,13 +158,13 @@ class ContraptionsTest {
             blockAt(end) == "minecraft:diamond_block"
         }
 
-        restoreHud()
+        scene.restoreHud()
     }
 
     @Test
     @DisplayName("A roller lays casing over the ground and leaves the track it finds")
-    fun `roller filling`(cluster: ClusterScope) = cluster.driving {
-        val scene = stage(GROUP, "roller_filling")
+    fun `roller filling`(cluster: ClusterScope) = cluster.stage {
+        val scene = scene(GROUP, "roller_filling")
 
         pullLever(scene.at(7, 6, 1))
         serverTicks(4 * 20)
@@ -183,13 +181,13 @@ class ContraptionsTest {
                 containerIsEmpty(barrel)
         }
 
-        restoreHud()
+        scene.restoreHud()
     }
 
     @Test
     @DisplayName("A roller paves what is under it and clears what is above")
-    fun `roller paving and clearing`(cluster: ClusterScope) = cluster.driving {
-        val scene = stage(GROUP, "roller_paving_and_clearing")
+    fun `roller paving and clearing`(cluster: ClusterScope) = cluster.stage {
+        val scene = scene(GROUP, "roller_paving_and_clearing")
 
         pullLever(scene.at(8, 5, 1))
         serverTicks(9 * 20)
@@ -201,13 +199,13 @@ class ContraptionsTest {
             paved.all { blockAt(scene.at(it)) == ANDESITE_CASING } && blockAt(cleared) == AIR
         }
 
-        restoreHud()
+        scene.restoreHud()
     }
 
     @Test
     @DisplayName("Two dispensers on one contraption share the ammunition rather than fight over it")
-    fun `dispensers do not fight`(cluster: ClusterScope) = cluster.driving {
-        val scene = stage(GROUP, "dispensers_dont_fight")
+    fun `dispensers do not fight`(cluster: ClusterScope) = cluster.stage {
+        val scene = scene(GROUP, "dispensers_dont_fight")
 
         pullLever(scene.at(2, 3, 1))
 
@@ -230,13 +228,13 @@ class ContraptionsTest {
                 containerHolds(dispenser, "minecraft:arrow", 2)
         }
 
-        restoreHud()
+        scene.restoreHud()
     }
 
     @Test
     @DisplayName("A dispenser on a contraption refills itself from the barrel behind it")
-    fun `dispensers refill`(cluster: ClusterScope) = cluster.driving {
-        val scene = stage(GROUP, "dispensers_refill")
+    fun `dispensers refill`(cluster: ClusterScope) = cluster.stage {
+        val scene = scene(GROUP, "dispensers_refill")
 
         val lever = scene.at(2, 3, 1)
         pullLever(lever)
@@ -254,13 +252,13 @@ class ContraptionsTest {
                 containerIsEmpty(barrel)
         }
 
-        restoreHud()
+        scene.restoreHud()
     }
 
     @Test
     @DisplayName("A vault keeps its fuel where a barrel gives it up")
-    fun `vaults protect fuel`(cluster: ClusterScope) = cluster.driving {
-        val scene = stage(GROUP, "vaults_protect_fuel")
+    fun `vaults protect fuel`(cluster: ClusterScope) = cluster.stage {
+        val scene = scene(GROUP, "vaults_protect_fuel")
 
         val lever = scene.at(2, 2, 1)
         pullLever(lever)
@@ -283,7 +281,7 @@ class ContraptionsTest {
             blockProperty(barrelLamp, "lit") == "false" && blockProperty(vaultLamp, "lit") == "true"
         }
 
-        restoreHud()
+        scene.restoreHud()
     }
 
     @Test
@@ -296,8 +294,8 @@ class ContraptionsTest {
             "own test framework builds the arena rather than placing one into a live world."
     )
     @DisplayName("Contraption controls switch the plough and the harvester off one at a time")
-    fun `controls`(cluster: ClusterScope) = cluster.driving {
-        val scene = stage(GROUP, "controls")
+    fun `controls`(cluster: ClusterScope) = cluster.stage {
+        val scene = scene(GROUP, "controls")
 
         val button = scene.at(5, 5, 4)
         val gearshift = scene.at(4, 5, 4)
@@ -333,18 +331,18 @@ class ContraptionsTest {
         pressButton(button)
         awaitStop(scene, gearshift)
 
-        shot("controls")
+        scene.shot("controls")
 
         assertEquals("minecraft:dirt", blockAt(dirt[2]), "The plough turned the ground after being switched off")
         assertEquals("7", blockProperty(wheat[2], "age"), "The harvester cut a crop after being switched off")
 
-        restoreHud()
+        scene.restoreHud()
     }
 
     @Test
     @DisplayName("An elevator carries a cow to the top floor")
-    fun `elevator`(cluster: ClusterScope) = cluster.driving {
-        val scene = stage(GROUP, "elevator")
+    fun `elevator`(cluster: ClusterScope) = cluster.stage {
+        val scene = scene(GROUP, "elevator")
 
         val pulley = scene.at(5, 12, 3)
         val secondary = scene.at(5, 12, 1)
@@ -381,7 +379,7 @@ class ContraptionsTest {
         }
 
         clickElevatorPulley(pulley)
-        restoreHud()
+        scene.restoreHud()
     }
 
     /** Waits for a sequenced gearshift to come back to rest, which is how a pass ends. */

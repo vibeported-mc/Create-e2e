@@ -1,13 +1,12 @@
 package com.simibubi.create.e2e.gametest
 
-import com.simibubi.create.e2e.ALEX
-import dev.vibeported.mc.driver.client
-import com.simibubi.create.e2e.Zones
+import com.simibubi.create.e2e.restoreHud
 import com.simibubi.create.e2e.runCommand
 import com.simibubi.create.e2e.serverTicks
 import com.simibubi.create.e2e.shot
 import com.simibubi.create.e2e.spectateAt
 import dev.vibeported.mc.driver.ServerScope
+import dev.vibeported.mc.driver.Stage
 import dev.vibeported.mc.driver.server
 import kotlinx.serialization.Serializable
 import net.minecraft.core.BlockPos
@@ -28,15 +27,31 @@ import net.minecraft.world.phys.Vec3
  * Here they are laid down in front of a client, and the camera is put where the machine can be seen
  * working. That is the whole reason for the port: a picture of the machine at the moment it failed
  * says which half of it stopped, and no assertion on a chest ever will.
+ *
+ * Each of them now gets a stage of its own -- its own ground, its own borrowed client, and a sweep
+ * afterwards whatever happened -- so there is no shared spot to clear, no order to keep and no
+ * leftover from the last machine to build the next one into. All of that lives in the driver now;
+ * what is left here is what is Create's own: where a structure's coordinates count from, and how far
+ * back to stand to see one.
  */
 
 /**
- * One of Create's saved machines, laid into the world and watched.
+ * One of Create's saved machines, laid onto a stage and watched.
  *
  * The structure is placed by the game rather than built here, which is what makes these tests worth
  * porting at all: the machine in the file is the machine Create's own tests run, down to the block.
  */
 internal class Scene(
+    /** The ground it was laid on, which belongs to one test and is taken back when that test ends. */
+    val ground: Stage,
+    /**
+     * The client watching it.
+     *
+     * Named rather than assumed. A stage borrows whichever client was free, so every camera move and
+     * every picture has to say which one it means -- which is exactly what lets two of these run at
+     * the same time.
+     */
+    val watcher: String,
     /** Where the structure's own corner sits in the world. */
     val origin: BlockPos,
     /** How big it turned out, which is what the camera is framed from. */
@@ -62,64 +77,54 @@ internal class Scene(
         origin.y + size.y / 2.0,
         origin.z + size.z / 2.0,
     )
+
+    /** A picture of this machine, taken by the client that is watching it. */
+    suspend fun shot(name: String) {
+        shot(watcher, name)
+    }
+
+    /** The heads-up display back on, after a camera move hid it for a picture. */
+    suspend fun restoreHud() {
+        restoreHud(watcher)
+    }
+
+    /** Watches [at] from [from], with this scene's own client. */
+    suspend fun spectateAt(from: Vec3, at: Vec3, settle: Int = 60) {
+        spectateAt(watcher, from, at, settle)
+    }
 }
 
 /**
- * Lays a machine down and puts the camera where it can be watched.
+ * Lays a machine down on this stage and puts a camera where it can be watched.
  *
- * @param name the structure's own name, as the upstream test gives it
  * @param group the folder it lives in, which upstream is the `@GameTestGroup` on the class
+ * @param name the structure's own name, as the upstream test gives it
  */
-internal suspend fun stage(group: String, name: String): Scene {
-    // The camera goes first, and this is the one thing every one of these has to get right. A
-    // dedicated server keeps loaded only the chunks somebody is near, and a structure placed into a
-    // chunk nobody is near is a structure that does not stay: the command reports success and the
-    // ground is still empty. What that arrives as is "there is no lever at ..." -- a machine that
-    // looks like it was never built, because it was not.
+internal suspend fun Stage.scene(group: String, name: String): Scene {
+    // The camera goes first, and this is the one thing that has to be got right. A dedicated server
+    // keeps loaded only the chunks somebody is near, and a structure placed into a chunk nobody is
+    // near is a structure that does not stay: the command reports success and the ground is still
+    // empty. What that arrives as is "there is no lever at ..." -- a machine that looks like it was
+    // never built, because it was not.
     //
-    // It only bites the first of these to run, which is what makes it worth a comment: every test
-    // after it inherits a camera already pointed here by the one before.
+    // Borrowing the client is what loads them: it is put down on this stage before it is handed
+    // over. Standing it off the corner as well settles the chunks it is about to be shown.
+    val watcher = client()
+
     spectateAt(
-        Vec3(ORIGIN.x + 20.0, ORIGIN.y + 16.0, ORIGIN.z + 20.0),
-        Vec3(ORIGIN.x + 8.0, ORIGIN.y + 4.0, ORIGIN.z + 8.0),
+        watcher,
+        Vec3(origin.x + 20.0, origin.y + 16.0, origin.z + 20.0),
+        Vec3(origin.x + 8.0, origin.y + 4.0, origin.z + 8.0),
     )
 
-    // The ground the last machine stood on, taken back -- what was built and whatever is still
-    // standing on it. These share one world and one spot, and a chest left over from the test before
-    // is a chest this one would read as its own output.
-    val swept = clearTheStage()
-
-    check(swept.refused.isEmpty()) {
-        "The stage could not be cleared before $name was laid down: ${swept.refused} would not go"
-    }
-    check(swept.ghosts.isEmpty()) {
-        "The stage was cleared before $name was laid down, but the client is still drawing " +
-            "${swept.ghosts}"
-    }
-
-    val id = "create:gametest/$group/$name"
-    val size = sizeOf(id)
-
-    runCommand("place template $id ${ORIGIN.x} ${ORIGIN.y} ${ORIGIN.z}")
-
-    // And then every block in it is told its neighbours have changed.
-    //
-    // `/place template` puts the blocks down without the updates that placing one by hand would
-    // cause, so anything that decides what to do by looking around it never looks: a redstone lamp
-    // saved lit stays lit over an empty chest, and a comparator beside a full depot goes on
-    // reporting whatever it was reporting when the structure was saved. Upstream never meets this
-    // because the game's own test framework places its structures with updates.
-    nudge(ORIGIN, ORIGIN.offset(size.x, size.y, size.z))
-
-    serverTicks(SETTLE_TICKS)
-
-    val scene = Scene(ORIGIN, size)
+    val size = place("create:gametest/$group/$name")
+    val scene = Scene(this, watcher, origin, size)
 
     watch(scene)
 
     // What was built, before a lever is touched. A machine that fails on its very first assertion
     // takes no other picture, and "the lamp was already lit" says nothing without one.
-    shot("${name}_placed")
+    scene.shot("${name}_placed")
 
     return scene
 }
@@ -136,7 +141,7 @@ internal suspend fun watch(scene: Scene) {
     val reach = maxOf(scene.size.x, scene.size.y, scene.size.z).coerceAtLeast(4)
 
     // Off one corner and above, which shows three faces of a machine rather than one flat wall.
-    spectateAt(
+    scene.spectateAt(
         Vec3(
             middle.x + reach * 1.1,
             middle.y + reach * 0.8,
@@ -144,138 +149,6 @@ internal suspend fun watch(scene: Scene) {
         ),
         middle,
     )
-}
-
-/**
- * The machines' ground put back to nothing: the blocks it was built of, and everything standing on
- * it.
- *
- * All of it through the level rather than through commands, and each half for its own reason.
- *
- * The blocks, because `/fill` is a command and a command that will not parse fails quietly --
- * `performPrefixedCommand` hands back a result nobody reads -- so a mistake in one looks exactly
- * like ground that was already clear. This counts what it took, which is a thing that can be
- * believed.
- *
- * The entities, because clearing blocks does not touch them and most of what these scenes leave
- * behind is not a block. A contraption is an entity, and so are the minecart carrying it, the seat
- * somebody sat in, the armour stand a backtank hung on, the zombie dropped in lava and the cow that
- * rode a lift. Replacing the ground beneath them does nothing at all: they stay where they were, and
- * the next machine is built around and through them.
- *
- * Discarded rather than killed. Killing a mob leaves its drops on the floor and killing a contraption
- * scatters the casings it was built from, which is the same mess wearing a different hat.
- */
-internal suspend fun clearTheStage(): Swept {
-    val swept = sweepTheGround()
-
-    // A removal is not a thing the client is told about at once: the server marks the entity gone
-    // and its tracker sends word on a later tick. Sweeping and then stopping -- which is what a
-    // teardown does -- leaves the client drawing something that no longer exists, and a window
-    // showing a contraption is indistinguishable from a stage that was never cleared.
-    serverTicks(SWEEP_SETTLE)
-
-    return swept.copy(ghosts = whatTheClientStillDraws())
-}
-
-/** What the client still has near the stage, which after a sweep should be nothing. */
-private suspend fun whatTheClientStillDraws(): List<String> = client(ALEX, CLEAR_LOW) { low ->
-    val level = minecraft.level ?: return@client Ghosts(emptyList())
-
-    Ghosts(
-        level.entitiesForRendering()
-            .filter { entity ->
-                entity !is net.minecraft.world.entity.player.Player &&
-                    kotlin.math.abs(entity.blockPosition().x - low.x) <= STRAY_REACH &&
-                    kotlin.math.abs(entity.blockPosition().z - low.z) <= STRAY_REACH
-            }
-            .map { entity ->
-                net.minecraft.core.registries.BuiltInRegistries.ENTITY_TYPE
-                    .getKey(entity.type).toString() + " at " + entity.blockPosition().toShortString()
-            }
-    )
-}.values
-
-@Serializable
-internal data class Ghosts(val values: List<String>)
-
-private const val SWEEP_SETTLE = 4
-
-private suspend fun sweepTheGround(): Swept = server(CLEAR_LOW, CLEAR_HIGH) { low, high ->
-    val air = net.minecraft.world.level.block.Blocks.AIR.defaultBlockState()
-    var blocks = 0
-
-    // The ground first, so that anything a removal shakes loose -- a bearing letting go of what it
-    // was holding -- is still there to be swept up by the pass that follows.
-    for (pos in net.minecraft.core.BlockPos.betweenClosed(low, high)) {
-        if (serverLevel.getBlockState(pos).isAir) continue
-
-        // Told to the clients but not to the neighbours: this is a whole region going at once, and
-        // a cascade of updates through blocks that are themselves about to go is work for nothing.
-        serverLevel.setBlock(pos.immutable(), air, net.minecraft.world.level.block.Block.UPDATE_CLIENTS)
-        blocks++
-    }
-
-    // And then whatever is standing about. The box reaches well past the ground the structures stand
-    // on, because some of these do not merely drift: a roller rides a minecart along its own track
-    // and is a good way from where it started by the time its test has finished.
-    val box = net.minecraft.world.phys.AABB(
-        (low.x - STRAY_REACH).toDouble(),
-        (low.y - STRAY_HEIGHT).toDouble(),
-        (low.z - STRAY_REACH).toDouble(),
-        (high.x + STRAY_REACH).toDouble(),
-        (high.y + STRAY_HEIGHT).toDouble(),
-        (high.z + STRAY_REACH).toDouble(),
-    )
-
-    val standing = serverLevel.getEntities(null as net.minecraft.world.entity.Entity?, box) {
-        it !is net.minecraft.world.entity.player.Player
-    }
-
-    standing.forEach { it.discard() }
-
-    // What did not go. An entity that refuses to be discarded is worth naming rather than assuming
-    // away: the whole point of doing this through the level was to be able to tell an empty stage
-    // from a sweep that quietly did nothing.
-    val refused = standing.filter { !it.isRemoved }.map {
-        "${net.minecraft.core.registries.BuiltInRegistries.ENTITY_TYPE.getKey(it.type)} " +
-            "at ${it.blockPosition().toShortString()}"
-    }
-
-    Swept(standing.size, blocks, refused)
-}
-
-/** What a sweep took, so that one which took nothing can be told from one that was never asked. */
-@Serializable
-internal data class Swept(
-    val entities: Int,
-    val blocks: Int,
-    val refused: List<String> = emptyList(),
-    val ghosts: List<String> = emptyList(),
-)
-
-/**
- * How far past the cleared ground to look for whatever wandered off it.
- *
- * Only the entities are looked for this far. The blocks are cleared over the ground the structures
- * are actually laid on, because a box this wide is two million of them and none of them are built.
- *
- * Nowhere near anything else either way: the nearest scene of any other kind is three hundred blocks
- * up the z axis, so this reaches only over ground that belongs to these machines.
- */
-private const val STRAY_REACH = 64
-
-private const val STRAY_HEIGHT = 32
-
-/** How big a saved structure is, asked of the server that has the file. */
-private suspend fun sizeOf(id: String): BlockPos = server(id) { named ->
-    val template = serverLevel.server.structureManager.get(Identifier.parse(named))
-
-    if (template.isEmpty) throw AssertionError("There is no structure called $named")
-
-    val size = template.get().size
-
-    BlockPos(size.x, size.y, size.z)
 }
 
 /**
@@ -298,7 +171,10 @@ internal suspend fun Scene.succeedWhen(
         waited += POLL_TICKS
     }
 
-    shot(picture)
+    // `this.`, and it earns its keep: there is an imported top-level `shot(name)` of the same shape
+    // that photographs the suite's old shared client. A member wins that contest, but a reader
+    // should not have to know the rule to be sure which client this picture comes from.
+    this.shot(picture)
 
     if (!condition()) {
         val reading = describe()
@@ -629,26 +505,6 @@ internal suspend fun looseItemsAround(middle: Vec3, reach: Double): Int =
         ).sumOf { it.item.count }
     }
 
-/** Tells every block in a box that its neighbours have changed, without disturbing what they hold. */
-private suspend fun nudge(low: BlockPos, high: BlockPos) {
-    server(low, high) { from, to ->
-        var nudged = 0
-
-        for (pos in BlockPos.betweenClosed(from, to)) {
-            val state = serverLevel.getBlockState(pos)
-            if (state.isAir) continue
-
-            // Neighbours only. Setting the block again would answer the same question and take the
-            // block entity's contents with it, which for a depot holding a stack is the very thing
-            // being asked about.
-            serverLevel.updateNeighborsAt(pos.immutable(), state.block)
-            nudged++
-        }
-
-        nudged
-    }
-}
-
 /** What every depot in a box is holding, for when a comparator disagrees with one. */
 internal suspend fun depotsIn(low: BlockPos, high: BlockPos): String = server(low, high) { from, to ->
     val found = mutableListOf<String>()
@@ -734,10 +590,50 @@ internal suspend fun dressAZombieLike(stand: BlockPos, spawnAt: BlockPos) {
             zombie.setItemSlot(slot, armorStand.getItemBySlot(slot).copy())
         }
 
-        serverLevel.addFreshEntity(zombie)
+        // Placed on purpose, so it is not to be tidied away. A mob nobody marks stays only while a
+        // player is near enough, and `Mob.checkDespawn` measures that against the nearest player in
+        // the *world* -- spectators excepted, creative ones not. So any client standing anywhere
+        // else, in any mode but spectator, is grounds for discarding this zombie a moment after it
+        // is made. It looks exactly like a mob that died of what the test was testing.
+        zombie.setPersistenceRequired()
+
+        // And the result is read, which is not fussiness either. `addFreshEntity` hands back whether
+        // the level took the entity, and a refusal looks exactly like a zombie that died: the test
+        // goes on to wait nine seconds for something that was never there.
+        if (!serverLevel.addFreshEntity(zombie)) {
+            throw AssertionError("The level would not take a zombie at " + spawn.toShortString())
+        }
+
         true
     }
 }
+
+/**
+ * Every mob of a kind anywhere near a place, with what state it is in.
+ *
+ * For the failures where "there is nothing left" is the whole report and says nothing about why.
+ * A mob that is missing because it walked off, because it burned down, or because it was never made
+ * are three different problems, and the difference is visible here and nowhere else.
+ */
+internal suspend fun mobsNear(pos: BlockPos, type: String, reach: Double = 32.0): String =
+    server(pos, type, reach) { where, kind, howFar ->
+        val wanted = net.minecraft.core.registries.BuiltInRegistries.ENTITY_TYPE
+            .getValue(Identifier.parse(kind))
+
+        Lines(
+            serverLevel.getEntities(
+                null as net.minecraft.world.entity.Entity?,
+                net.minecraft.world.phys.AABB(where).inflate(howFar),
+            ) { it.type == wanted }
+                .map { found ->
+                    val living = found as? net.minecraft.world.entity.LivingEntity
+                    found.blockPosition().toShortString() +
+                        " health " + (living?.health ?: -1f) +
+                        " fire " + found.remainingFireTicks +
+                        (if (found.isAlive) "" else " (dead)")
+                }
+        )
+    }.values.let { if (it.isEmpty()) "no " + type + " within " + reach.toInt() else it.joinToString("; ") }
 
 /** What a threshold switch says the stock level is, which for a pulley is how far down the rope went. */
 internal suspend fun stockLevelAt(pos: BlockPos): Int = server(pos) { where ->
@@ -808,7 +704,11 @@ internal suspend fun pressButton(pos: BlockPos) {
 
 /** Puts an animal somewhere, which is how a lift gets a passenger. */
 internal suspend fun spawnEntity(type: String, pos: BlockPos) {
-    runCommand("summon $type ${pos.x + 0.5} ${pos.y} ${pos.z + 0.5}")
+    // Persistent, because a test put it here. A mob nobody marks is discarded as soon as the nearest
+    // player in the world is further off than its despawn distance -- and the nearest player is not
+    // necessarily the one watching this scene, since spectators do not count and clients waiting
+    // between tests do.
+    runCommand("summon $type ${pos.x + 0.5} ${pos.y} ${pos.z + 0.5} {PersistenceRequired:1b}")
 }
 
 /** Whether a bearing has a contraption hanging off it, which is how assembly is checked. */
@@ -1012,7 +912,7 @@ internal suspend fun emptyContainer(pos: BlockPos) {
 }
 
 /** Every kind of plank the game knows, which is what the wheel materials test works through. */
-internal suspend fun everyPlank(): Lines = server(ALEX) {
+internal suspend fun everyPlank(): Lines = server {
     Lines(
         net.minecraft.core.registries.BuiltInRegistries.BLOCK
             .getTagOrEmpty(net.minecraft.tags.BlockTags.PLANKS)
@@ -1037,20 +937,6 @@ private const val SETTLE_TICKS = 40
 
 /** How often a machine is looked in on while it works. */
 private const val POLL_TICKS = 10
-
-/** Where every one of these machines is laid down. */
-private val ORIGIN = BlockPos(48, -59, Zones.GAMETEST)
-
-/**
- * The box taken back before each one.
- *
- * Generous in every direction, because these structures run from one block to sixteen and a machine
- * that overhangs the last one's footprint would otherwise be built into its leftovers. Kept under
- * the thirty-two thousand blocks a single fill will accept.
- */
-private val CLEAR_LOW = BlockPos(ORIGIN.x - 4, ORIGIN.y - 2, ORIGIN.z - 4)
-
-private val CLEAR_HIGH = BlockPos(ORIGIN.x + 27, ORIGIN.y + 21, ORIGIN.z + 27)
 
 /* --- the halves that run on the server, where the machines are --- */
 

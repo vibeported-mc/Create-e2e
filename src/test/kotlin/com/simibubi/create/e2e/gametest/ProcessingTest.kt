@@ -1,7 +1,6 @@
 package com.simibubi.create.e2e.gametest
 
-import com.simibubi.create.e2e.driving
-import com.simibubi.create.e2e.restoreHud
+import dev.vibeported.mc.driver.junit.stage
 import com.simibubi.create.e2e.serverTicks
 import dev.vibeported.mc.driver.ClusterScope
 import dev.vibeported.mc.driver.junit.DrivesMinecraft
@@ -26,21 +25,21 @@ class ProcessingTest {
 
     @Test
     @DisplayName("A mixer makes brass out of copper and zinc")
-    fun `brass mixing`(cluster: ClusterScope) = cluster.driving {
-        val scene = stage(GROUP, "brass_mixing")
+    fun `brass mixing`(cluster: ClusterScope) = cluster.stage {
+        val scene = scene(GROUP, "brass_mixing")
 
         pullLever(scene.at(2, 3, 2))
 
         val chest = scene.at(7, 3, 1)
         scene.succeedWhen("brass_mixing", TEN_SECONDS) { containerHolds(chest, BRASS_INGOT) }
 
-        restoreHud()
+        scene.restoreHud()
     }
 
     @Test
     @DisplayName("A mixer fed by a mechanical arm makes brass")
-    fun `brass mixing with an arm`(cluster: ClusterScope) = cluster.driving {
-        val scene = stage(GROUP, "brass_mixing_2")
+    fun `brass mixing with an arm`(cluster: ClusterScope) = cluster.stage {
+        val scene = scene(GROUP, "brass_mixing_2")
 
         val basinLever = scene.at(3, 3, 1)
         val armLever = scene.at(3, 3, 5)
@@ -53,13 +52,13 @@ class ProcessingTest {
 
         scene.succeedWhen("brass_mixing_2", TWENTY_SECONDS) { containerHolds(output, BRASS_INGOT) }
 
-        restoreHud()
+        scene.restoreHud()
     }
 
     @Test
     @DisplayName("A basin brews a potion and a spout bottles it")
-    fun `potion brewing`(cluster: ClusterScope) = cluster.driving {
-        val scene = stage(GROUP, "potion_brewing")
+    fun `potion brewing`(cluster: ClusterScope) = cluster.stage {
+        val scene = scene(GROUP, "potion_brewing")
 
         val chest = scene.at(8, 3, 5)
         val potionLever = scene.at(2, 3, 4)
@@ -75,26 +74,26 @@ class ProcessingTest {
             containerHolds(chest, "minecraft:potion")
         }
 
-        restoreHud()
+        scene.restoreHud()
     }
 
     @Test
     @DisplayName("A spout fills a mould and the result is crafted")
-    fun `spout crafting`(cluster: ClusterScope) = cluster.driving {
-        val scene = stage(GROUP, "spout_crafting")
+    fun `spout crafting`(cluster: ClusterScope) = cluster.stage {
+        val scene = scene(GROUP, "spout_crafting")
 
         pullLever(scene.at(2, 3, 2))
 
         val chest = scene.at(5, 3, 1)
         scene.succeedWhen("spout_crafting", TEN_SECONDS) { containerHolds(chest, "minecraft:redstone") }
 
-        restoreHud()
+        scene.restoreHud()
     }
 
     @Test
     @DisplayName("Crushing wheels are made by crushing wheels")
-    fun `crushing wheel crafting`(cluster: ClusterScope) = cluster.driving {
-        val scene = stage(GROUP, "crushing_wheel_crafting")
+    fun `crushing wheel crafting`(cluster: ClusterScope) = cluster.stage {
+        val scene = scene(GROUP, "crushing_wheel_crafting")
 
         listOf(
             BlockPos(2, 3, 2),
@@ -107,13 +106,13 @@ class ProcessingTest {
             containerHolds(chest, "create:crushing_wheel", 2)
         }
 
-        restoreHud()
+        scene.restoreHud()
     }
 
     @Test
     @DisplayName("A sequenced assembly line makes a precision mechanism")
-    fun `precision mechanism crafting`(cluster: ClusterScope) = cluster.driving {
-        val scene = stage(GROUP, "precision_mechanism_crafting")
+    fun `precision mechanism crafting`(cluster: ClusterScope) = cluster.stage {
+        val scene = scene(GROUP, "precision_mechanism_crafting")
 
         pullLever(scene.at(6, 3, 6))
 
@@ -128,26 +127,26 @@ class ProcessingTest {
                 containerHoldsAnyOf(output, INCOMPLETE)
         }
 
-        restoreHud()
+        scene.restoreHud()
     }
 
     @Test
     @DisplayName("A fan washing sand over water leaves clay behind")
-    fun `sand washing`(cluster: ClusterScope) = cluster.driving {
-        val scene = stage(GROUP, "sand_washing")
+    fun `sand washing`(cluster: ClusterScope) = cluster.stage {
+        val scene = scene(GROUP, "sand_washing")
 
         pullLever(scene.at(5, 3, 1))
 
         val chest = scene.at(8, 3, 2)
         scene.succeedWhen("sand_washing", TEN_SECONDS) { containerHolds(chest, "minecraft:clay_ball") }
 
-        restoreHud()
+        scene.restoreHud()
     }
 
     @Test
     @DisplayName("Crushing takes stone to cobble to sand")
-    fun `stone cobble sand crushing`(cluster: ClusterScope) = cluster.driving {
-        val scene = stage(GROUP, "stone_cobble_sand_crushing")
+    fun `stone cobble sand crushing`(cluster: ClusterScope) = cluster.stage {
+        val scene = scene(GROUP, "stone_cobble_sand_crushing")
 
         pullLever(scene.at(2, 3, 1))
 
@@ -156,26 +155,26 @@ class ProcessingTest {
             containerHolds(chest, "minecraft:sand", 5)
         }
 
-        restoreHud()
+        scene.restoreHud()
     }
 
     @Test
     @DisplayName("A deployer line makes track, and the output can be taken back out again")
-    fun `track crafting`(cluster: ClusterScope) = cluster.driving {
-        val scene = stage(GROUP, "track_crafting")
+    fun `track crafting`(cluster: ClusterScope) = cluster.stage {
+        val scene = scene(GROUP, "track_crafting")
 
         pullLever(scene.at(2, 3, 1))
 
         val output = scene.at(7, 3, 2)
         scene.succeedWhen("track_crafting", TEN_SECONDS) { containerHolds(output, "create:track", 6) }
 
-        restoreHud()
+        scene.restoreHud()
     }
 
     @Test
     @DisplayName("A spout fills a bottle with water")
-    fun `water filling a bottle`(cluster: ClusterScope) = cluster.driving {
-        val scene = stage(GROUP, "water_filling_bottle")
+    fun `water filling a bottle`(cluster: ClusterScope) = cluster.stage {
+        val scene = scene(GROUP, "water_filling_bottle")
 
         pullLever(scene.at(3, 3, 3))
 
@@ -184,13 +183,13 @@ class ProcessingTest {
             containerHolds(output, "minecraft:potion")
         }
 
-        restoreHud()
+        scene.restoreHud()
     }
 
     @Test
     @DisplayName("A millstone grinds wheat into flour")
-    fun `wheat milling`(cluster: ClusterScope) = cluster.driving {
-        val scene = stage(GROUP, "wheat_milling")
+    fun `wheat milling`(cluster: ClusterScope) = cluster.stage {
+        val scene = scene(GROUP, "wheat_milling")
 
         pullLever(scene.at(1, 7, 1))
 
@@ -199,7 +198,7 @@ class ProcessingTest {
             containerHolds(output, "create:wheat_flour", 3)
         }
 
-        restoreHud()
+        scene.restoreHud()
     }
 
     private companion object {

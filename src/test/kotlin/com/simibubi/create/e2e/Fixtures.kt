@@ -95,12 +95,6 @@ internal fun ClusterScope.driving(
         // died cannot be tidied up and that is not this test's failure to report either.
         withContext(NonCancellable) {
             runCatching { closeAnyScreen() }
-
-            // And the machines' ground swept, whoever was using it. Clearing it when the next
-            // structure wants it is too late by a whole test: what a scene leaves standing -- a
-            // contraption still riding its track -- is then there for the length of the run that
-            // follows, in every picture it takes and in the way of everything it builds.
-            runCatching { com.simibubi.create.e2e.gametest.clearTheStage() }
         }
     }
 
@@ -337,10 +331,20 @@ internal suspend fun lookDownOn(x: Double, y: Double, z: Double, settle: Int = 6
  * [spectateFrom] needs does not arise here.
  */
 internal suspend fun spectateAt(from: Vec3, at: Vec3, settle: Int = 60) {
-    setUiLayer(ALEX, UiLayer.GUI, false)
-    runCommand("gamemode spectator $ALEX")
-    teleportFacing(from, at)
-    awaitCamera(from, settle)
+    spectateAt(ALEX, from, at, settle)
+}
+
+/**
+ * The same, for a client borrowed from the pool rather than the one this suite used to share.
+ *
+ * The client is named rather than assumed, which is what lets two of these run at once: a stage
+ * borrows whichever client was free and every camera move has to say which one it means.
+ */
+internal suspend fun spectateAt(client: String, from: Vec3, at: Vec3, settle: Int = 60) {
+    setUiLayer(client, UiLayer.GUI, false)
+    runCommand("gamemode spectator $client")
+    teleportFacing(client, from, at)
+    awaitCamera(client, from, settle)
 }
 
 /**
@@ -352,11 +356,16 @@ internal suspend fun spectateAt(from: Vec3, at: Vec3, settle: Int = 60) {
  * somewhere they are about to leave.
  */
 internal suspend fun standAt(from: Vec3, at: Vec3, settle: Int = 40) {
-    setUiLayer(ALEX, UiLayer.GUI, false)
-    runCommand("gamemode creative $ALEX")
-    allowFlight(ALEX)
-    teleportFacing(from, at)
-    awaitCamera(from, settle)
+    standAt(ALEX, from, at, settle)
+}
+
+/** The same, for a named client. @see spectateAt */
+internal suspend fun standAt(client: String, from: Vec3, at: Vec3, settle: Int = 40) {
+    setUiLayer(client, UiLayer.GUI, false)
+    runCommand("gamemode creative $client")
+    allowFlight(client)
+    teleportFacing(client, from, at)
+    awaitCamera(client, from, settle)
 }
 
 /**
@@ -371,8 +380,8 @@ internal suspend fun standAt(from: Vec3, at: Vec3, settle: Int = 40) {
  * Which is why the originals did the trigonometry by hand against `getEyePosition`. This is that,
  * with the eye height read off the server since only it knows how tall the player currently is.
  */
-private suspend fun teleportFacing(from: Vec3, at: Vec3) {
-    val eyeHeight = server(ALEX) { name -> playerNamed(name).eyeHeight.toDouble() }
+private suspend fun teleportFacing(client: String, from: Vec3, at: Vec3) {
+    val eyeHeight = server(client) { name -> playerNamed(name).eyeHeight.toDouble() }
 
     val dx = at.x - from.x
     val dy = at.y - (from.y + eyeHeight)
@@ -384,16 +393,16 @@ private suspend fun teleportFacing(from: Vec3, at: Vec3) {
 
     runCommand(
         "tp %s %.3f %.3f %.3f %.3f %.3f"
-            .format(Locale.ROOT, ALEX, from.x, from.y, from.z, yaw, pitch)
+            .format(Locale.ROOT, client, from.x, from.y, from.z, yaw, pitch)
     )
 }
 
-private suspend fun awaitCamera(from: Vec3, settle: Int) {
+private suspend fun awaitCamera(watcher: String, from: Vec3, settle: Int) {
     val target = BlockPos.containing(from)
-    client(ALEX, target) { where ->
+    client(watcher, target) { where ->
         awaitUntil { clientPlayer?.blockPosition()?.closerThan(where, 3.0) == true }
     }
-    client(ALEX, settle) { ticks -> awaitTicks(ticks) }
+    client(watcher, settle) { ticks -> awaitTicks(ticks) }
 }
 
 /**
@@ -495,9 +504,19 @@ internal suspend fun restoreHud() {
     setUiLayer(ALEX, UiLayer.GUI, true)
 }
 
+/** The same, for a named client. @see spectateAt */
+internal suspend fun restoreHud(client: String) {
+    setUiLayer(client, UiLayer.GUI, true)
+}
+
 /** A picture from the client, kept under the capture directory the build points the driver at. */
 internal suspend fun shot(name: String) {
     screenshot(ALEX, name)
+}
+
+/** The same, for a named client. @see spectateAt */
+internal suspend fun shot(client: String, name: String) {
+    screenshot(client, name)
 }
 
 /**

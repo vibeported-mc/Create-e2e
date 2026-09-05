@@ -1,7 +1,6 @@
 package com.simibubi.create.e2e.gametest
 
-import com.simibubi.create.e2e.driving
-import com.simibubi.create.e2e.restoreHud
+import dev.vibeported.mc.driver.junit.stage
 import com.simibubi.create.e2e.serverTicks
 import dev.vibeported.mc.driver.ClusterScope
 import dev.vibeported.mc.driver.junit.DrivesMinecraft
@@ -24,8 +23,8 @@ class MiscTest {
 
     @Test
     @DisplayName("Shearing a sheep leaves its wool on the ground")
-    fun `shearing`(cluster: ClusterScope) = cluster.driving {
-        val scene = stage(GROUP, "shearing")
+    fun `shearing`(cluster: ClusterScope) = cluster.stage {
+        val scene = scene(GROUP, "shearing")
 
         val sheep = scene.at(2, 1, 2)
         shearTheSheep(sheep)
@@ -41,13 +40,13 @@ class MiscTest {
             looseItemsAt(sheep, WHITE_WOOL, 2.0) >= 1
         }
 
-        restoreHud()
+        scene.restoreHud()
     }
 
     @Test
     @DisplayName("A smart observer watching blocks lights only the lamp whose side matched")
-    fun `smart observer on blocks`(cluster: ClusterScope) = cluster.driving {
-        val scene = stage(GROUP, "smart_observer_blocks")
+    fun `smart observer on blocks`(cluster: ClusterScope) = cluster.stage {
+        val scene = scene(GROUP, "smart_observer_blocks")
 
         pullLever(scene.at(2, 2, 1))
 
@@ -62,13 +61,13 @@ class MiscTest {
             blockProperty(left, "lit") == "true" && blockProperty(right, "lit") == "false"
         }
 
-        restoreHud()
+        scene.restoreHud()
     }
 
     @Test
     @DisplayName("A threshold switch over a pulley reads how far the rope went down")
-    fun `threshold switch over a pulley`(cluster: ClusterScope) = cluster.driving {
-        val scene = stage(GROUP, "threshold_switch_pulley")
+    fun `threshold switch over a pulley`(cluster: ClusterScope) = cluster.stage {
+        val scene = scene(GROUP, "threshold_switch_pulley")
 
         val switch = scene.at(1, 6, 1)
         val restingPlace = scene.at(2, 2, 1)
@@ -85,13 +84,13 @@ class MiscTest {
             stockLevelAt(switch) == restingPlace.y
         }
 
-        restoreHud()
+        scene.restoreHud()
     }
 
     @Test
     @DisplayName("A netherite backtank keeps its wearer alive in lava")
-    fun `netherite backtank`(cluster: ClusterScope) = cluster.driving {
-        val scene = stage(GROUP, "netherite_backtank")
+    fun `netherite backtank`(cluster: ClusterScope) = cluster.stage {
+        val scene = scene(GROUP, "netherite_backtank")
 
         val lava = scene.at(2, 2, 3)
         val stand = scene.at(2, 2, 1)
@@ -105,12 +104,12 @@ class MiscTest {
         scene.succeedWhen(
             "netherite_backtank",
             DEFAULT,
-            describe = { "there is ${if (entityNear(lava, ZOMBIE, 3.0)) "a zombie" else "nothing"} left" },
+            describe = { mobsNear(lava, ZOMBIE) },
         ) {
             entityNear(lava, ZOMBIE, 3.0)
         }
 
-        restoreHud()
+        scene.restoreHud()
     }
 
     private companion object {

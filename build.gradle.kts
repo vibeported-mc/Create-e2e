@@ -146,5 +146,13 @@ neoForge {
 
     mcDriver {
         captureDir = layout.buildDirectory.dir("e2e")
+
+        // Nothing anywhere. Every test lays its own floor on ground nobody else is using, so a
+        // machine cannot be standing on something an earlier test left, and the server has no world
+        // to generate before the first test can start.
+        world = dev.vibeported.mc.driver.gradle.WorldPreset.EMPTY
+
+        // And so at most two tests in flight, because there are two clients to go round.
+        clientPool = 2
     }
 }

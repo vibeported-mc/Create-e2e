@@ -1,9 +1,8 @@
 package com.simibubi.create.e2e.gametest
 
-import com.simibubi.create.e2e.driving
-import com.simibubi.create.e2e.restoreHud
+import dev.vibeported.mc.driver.Stage
+import dev.vibeported.mc.driver.junit.stage
 import com.simibubi.create.e2e.serverTicks
-import com.simibubi.create.e2e.shot
 import dev.vibeported.mc.driver.ClusterScope
 import dev.vibeported.mc.driver.junit.DrivesMinecraft
 import net.minecraft.core.BlockPos
@@ -24,8 +23,8 @@ class FluidsTest {
 
     @Test
     @DisplayName("A hose pulley moves a pool from one side to the other and keeps none of it")
-    fun `hose pulley transfer`(cluster: ClusterScope) = cluster.driving {
-        val scene = stage(GROUP, "hose_pulley_transfer")
+    fun `hose pulley transfer`(cluster: ClusterScope) = cluster.stage {
+        val scene = scene(GROUP, "hose_pulley_transfer")
 
         pullLever(scene.at(7, 7, 5))
         serverTicks(15 * 20)
@@ -44,13 +43,13 @@ class FluidsTest {
                 tankHolds(pulley).isEmpty
         }
 
-        restoreHud()
+        scene.restoreHud()
     }
 
     @Test
     @DisplayName("A pump empties a basin into the world")
-    fun `pumping out into the world`(cluster: ClusterScope) = cluster.driving {
-        val scene = stage(GROUP, "in_world_pumping_out")
+    fun `pumping out into the world`(cluster: ClusterScope) = cluster.stage {
+        val scene = scene(GROUP, "in_world_pumping_out")
 
         pullLever(scene.at(4, 3, 3))
 
@@ -65,13 +64,13 @@ class FluidsTest {
             blockAt(output) == WATER && tankHolds(basin).isEmpty
         }
 
-        restoreHud()
+        scene.restoreHud()
     }
 
     @Test
     @DisplayName("A pump takes a block of water out of the world into a basin")
-    fun `pumping in from the world`(cluster: ClusterScope) = cluster.driving {
-        val scene = stage(GROUP, "in_world_pumping_in")
+    fun `pumping in from the world`(cluster: ClusterScope) = cluster.stage {
+        val scene = scene(GROUP, "in_world_pumping_in")
 
         pullLever(scene.at(4, 3, 3))
 
@@ -86,13 +85,13 @@ class FluidsTest {
             blockAt(water) == AIR && tankHolds(basin).let { it.name == WATER_FLUID && it.amount == BUCKET }
         }
 
-        restoreHud()
+        scene.restoreHud()
     }
 
     @Test
     @DisplayName("A steam engine turns at the speed and strength it is rated for")
-    fun `steam engine`(cluster: ClusterScope) = cluster.driving {
-        val scene = stage(GROUP, "steam_engine")
+    fun `steam engine`(cluster: ClusterScope) = cluster.stage {
+        val scene = scene(GROUP, "steam_engine")
 
         pullLever(scene.at(4, 3, 3))
 
@@ -110,13 +109,13 @@ class FluidsTest {
             closeTo(stressometerReads(stressometer), 2048f) && closeTo(speedometerReads(speedometer), 16f)
         }
 
-        restoreHud()
+        scene.restoreHud()
     }
 
     @Test
     @DisplayName("Three pipes combine into one without losing or making fluid")
-    fun `three pipes combine`(cluster: ClusterScope) = cluster.driving {
-        val scene = stage(GROUP, "3_pipe_combine")
+    fun `three pipes combine`(cluster: ClusterScope) = cluster.stage {
+        val scene = scene(GROUP, "3_pipe_combine")
 
         val tanks = listOf(scene.at(5, 2, 1), scene.at(5, 2, 2), scene.at(5, 2, 3))
         val output = scene.at(1, 2, 2)
@@ -133,13 +132,13 @@ class FluidsTest {
             fluidInTanks(tanks) == 0 && fluidInTanks(listOf(output)) == setOut
         }
 
-        restoreHud()
+        scene.restoreHud()
     }
 
     @Test
     @DisplayName("One pipe splits into three without losing or making fluid")
-    fun `three pipes split`(cluster: ClusterScope) = cluster.driving {
-        val scene = stage(GROUP, "3_pipe_split")
+    fun `three pipes split`(cluster: ClusterScope) = cluster.stage {
+        val scene = scene(GROUP, "3_pipe_split")
 
         val tanks = listOf(scene.at(5, 2, 1), scene.at(5, 2, 2), scene.at(5, 2, 3))
         val output = scene.at(1, 2, 2)
@@ -156,12 +155,12 @@ class FluidsTest {
             fluidInTanks(listOf(output)) == 0 && fluidInTanks(tanks) == setOut
         }
 
-        restoreHud()
+        scene.restoreHud()
     }
 
     @Test
     @DisplayName("A large water wheel stands still in a crossflow and turns in a one-way one")
-    fun `large waterwheel`(cluster: ClusterScope) = cluster.driving {
+    fun `large waterwheel`(cluster: ClusterScope) = cluster.stage {
         waterwheel(
             "large_waterwheel",
             wheel = BlockPos(4, 3, 2),
@@ -177,7 +176,7 @@ class FluidsTest {
 
     @Test
     @DisplayName("A small water wheel stands still in a crossflow and turns in a one-way one")
-    fun `small waterwheel`(cluster: ClusterScope) = cluster.driving {
+    fun `small waterwheel`(cluster: ClusterScope) = cluster.stage {
         waterwheel(
             "small_waterwheel",
             wheel = BlockPos(3, 2, 2),
@@ -198,7 +197,7 @@ class FluidsTest {
      * edges must stay dry throughout -- water there would drive the wheel from somewhere the test is
      * not asking about, and both halves of the answer would be meaningless.
      */
-    private suspend fun waterwheel(
+    private suspend fun Stage.waterwheel(
         structure: String,
         wheel: BlockPos,
         rpm: Float,
@@ -209,7 +208,7 @@ class FluidsTest {
         openLever: BlockPos,
         leftLever: BlockPos,
     ) {
-        val scene = stage(GROUP, structure)
+        val scene = scene(GROUP, structure)
 
         val speedometer = scene.at(wheel.north())
         val stressometer = scene.at(wheel.south())
@@ -261,13 +260,13 @@ class FluidsTest {
             "Water reached the wheel's edges while it was turning",
         )
 
-        restoreHud()
+        scene.restoreHud()
     }
 
     @Test
     @DisplayName("A smart observer counts what goes through a pipe")
-    fun `smart observer on pipes`(cluster: ClusterScope) = cluster.driving {
-        val scene = stage(GROUP, "smart_observer_pipes")
+    fun `smart observer on pipes`(cluster: ClusterScope) = cluster.stage {
+        val scene = scene(GROUP, "smart_observer_pipes")
 
         pullLever(scene.at(3, 3, 1))
 
@@ -283,13 +282,13 @@ class FluidsTest {
                 blockAt(output) == "minecraft:diamond_block"
         }
 
-        restoreHud()
+        scene.restoreHud()
     }
 
     @Test
     @DisplayName("A threshold switch on a tank lights only once the tank is full")
-    fun `threshold switch on a tank`(cluster: ClusterScope) = cluster.driving {
-        val scene = stage(GROUP, "threshold_switch")
+    fun `threshold switch on a tank`(cluster: ClusterScope) = cluster.stage {
+        val scene = scene(GROUP, "threshold_switch")
 
         val leftHandle = scene.at(4, 2, 4)
         val rightHandle = scene.at(2, 2, 4)
@@ -331,7 +330,7 @@ class FluidsTest {
             tankHolds(tank).isEmpty && blockProperty(lamp, "lit") == "false"
         }
 
-        restoreHud()
+        scene.restoreHud()
     }
 
     private suspend fun awaitDrained(scene: Scene, tank: BlockPos, picture: String) {
@@ -346,8 +345,8 @@ class FluidsTest {
 
     @Test
     @DisplayName("Open pipes rain their fluid on what stands under them, and stop when told")
-    fun `open pipes`(cluster: ClusterScope) = cluster.driving {
-        val scene = stage(GROUP, "open_pipes")
+    fun `open pipes`(cluster: ClusterScope) = cluster.stage {
+        val scene = scene(GROUP, "open_pipes")
 
         val effects = scene.at(2, 4, 2)
         val removers = scene.at(3, 5, 2)
@@ -387,13 +386,13 @@ class FluidsTest {
             !zombieIsOnFire(firstSeat) && !zombieHasEffects(secondSeat)
         }
 
-        restoreHud()
+        scene.restoreHud()
     }
 
     @Test
     @DisplayName("Spouts fill cauldrons, wet farmland, make mud and fill what is put under them")
-    fun `spouting`(cluster: ClusterScope) = cluster.driving {
-        val scene = stage(GROUP, "spouting")
+    fun `spouting`(cluster: ClusterScope) = cluster.stage {
+        val scene = scene(GROUP, "spouting")
 
         pullLever(scene.at(2, 3, 2))
 
@@ -418,7 +417,7 @@ class FluidsTest {
                 containerHolds(depot.east().east(), "minecraft:grass_block")
         }
 
-        restoreHud()
+        scene.restoreHud()
     }
 
     /** Every square of a box, corners included, in the structure's own coordinates. */

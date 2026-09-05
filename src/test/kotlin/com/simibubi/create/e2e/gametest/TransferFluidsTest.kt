@@ -1,10 +1,9 @@
 package com.simibubi.create.e2e.gametest
 
-import com.simibubi.create.e2e.driving
-import com.simibubi.create.e2e.restoreHud
+import dev.vibeported.mc.driver.Stage
+import dev.vibeported.mc.driver.junit.stage
 import com.simibubi.create.e2e.runCommand
 import com.simibubi.create.e2e.serverTicks
-import com.simibubi.create.e2e.shot
 import dev.vibeported.mc.driver.ClusterScope
 import dev.vibeported.mc.driver.junit.DrivesMinecraft
 import dev.vibeported.mc.driver.server
@@ -27,7 +26,7 @@ class TransferFluidsTest {
 
     @Test
     @DisplayName("Two tanks joined into one keep what they were holding between them")
-    fun `merging tanks conserves fluid`(cluster: ClusterScope) = cluster.driving {
+    fun `merging tanks conserves fluid`(cluster: ClusterScope) = cluster.stage {
         val scene = arena()
 
         val lower = scene.at(2, 2, 2)
@@ -45,7 +44,7 @@ class TransferFluidsTest {
         // Only now do the two become one.
         setBlockAt(middle, TANK)
         serverTicks(SETTLE)
-        shot("tank_merge")
+        scene.shot("tank_merge")
 
         // Merged, so every part answers for the whole: ask one of them, not all three.
         assertEquals(
@@ -53,12 +52,12 @@ class TransferFluidsTest {
             "The merged tank holds ${tankHolds(lower).amount}mB of the 1000mB put into it",
         )
 
-        restoreHud()
+        scene.restoreHud()
     }
 
     @Test
     @DisplayName("A tank taken apart keeps what the remaining half can hold")
-    fun `splitting tanks conserves fluid`(cluster: ClusterScope) = cluster.driving {
+    fun `splitting tanks conserves fluid`(cluster: ClusterScope) = cluster.stage {
         val scene = arena()
 
         val lower = scene.at(2, 2, 2)
@@ -74,49 +73,49 @@ class TransferFluidsTest {
 
         setBlockAt(upper, "minecraft:air")
         serverTicks(SETTLE)
-        shot("tank_split")
+        scene.shot("tank_split")
 
         assertEquals(
             3000, tankHolds(lower).amount,
             "The tank kept ${tankHolds(lower).amount}mB of the 3000mB it held before the one above it went",
         )
 
-        restoreHud()
+        scene.restoreHud()
     }
 
     @Test
     @DisplayName("What an insertion says it could not take is what it left behind")
-    fun `insertion reports its remainder`(cluster: ClusterScope) = cluster.driving {
+    fun `insertion reports its remainder`(cluster: ClusterScope) = cluster.stage {
         val scene = arena()
         val chest = scene.at(2, 2, 2)
 
         setBlockAt(chest, "minecraft:chest")
         serverTicks(SETTLE)
-        shot("insert_remainder")
+        scene.shot("insert_remainder")
 
         assertEquals("", remainderComplaint(chest), "The insertion did not report what it left behind")
 
-        restoreHud()
+        scene.restoreHud()
     }
 
     @Test
     @DisplayName("What a fill says it took is what the tank gained")
-    fun `filling reports what it took`(cluster: ClusterScope) = cluster.driving {
+    fun `filling reports what it took`(cluster: ClusterScope) = cluster.stage {
         val scene = arena()
         val tank = scene.at(2, 2, 2)
 
         setBlockAt(tank, TANK)
         serverTicks(SETTLE)
-        shot("fill_reports")
+        scene.shot("fill_reports")
 
         assertEquals("", fillComplaint(tank), "The fill did not report what it took")
 
-        restoreHud()
+        scene.restoreHud()
     }
 
     @Test
     @DisplayName("A basin recipe takes its fluid out of the basin rather than keeping it")
-    fun `a basin consumes its fluid`(cluster: ClusterScope) = cluster.driving {
+    fun `a basin consumes its fluid`(cluster: ClusterScope) = cluster.stage {
         val scene = arena()
 
         val basin = scene.at(2, 2, 2)
@@ -150,7 +149,7 @@ class TransferFluidsTest {
             containerHolds(basin, "minecraft:mud") && tankHolds(basin).amount == 250
         }
 
-        restoreHud()
+        scene.restoreHud()
     }
 
     /**
@@ -159,8 +158,8 @@ class TransferFluidsTest {
      * Everything above it is taken away, because what each of these builds has to stand on its own --
      * a pipe left over from the structure would be another way into a tank being measured.
      */
-    private suspend fun arena(): Scene {
-        val scene = stage(GROUP, "hose_pulley_transfer")
+    private suspend fun Stage.arena(): Scene {
+        val scene = scene(GROUP, "hose_pulley_transfer")
 
         val low = scene.at(0, 2, 0)
         val high = scene.at(12, 6, 6)

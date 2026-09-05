@@ -1,7 +1,7 @@
 package com.simibubi.create.e2e.gametest
 
-import com.simibubi.create.e2e.driving
-import com.simibubi.create.e2e.restoreHud
+import dev.vibeported.mc.driver.Stage
+import dev.vibeported.mc.driver.junit.stage
 import com.simibubi.create.e2e.serverTicks
 import dev.vibeported.mc.driver.ClusterScope
 import dev.vibeported.mc.driver.junit.DrivesMinecraft
@@ -22,8 +22,8 @@ class ItemsTest {
 
     @Test
     @DisplayName("An andesite tunnel splits what it is given between three chests")
-    fun `andesite tunnel split`(cluster: ClusterScope) = cluster.driving {
-        val scene = stage(GROUP, "andesite_tunnel_split")
+    fun `andesite tunnel split`(cluster: ClusterScope) = cluster.stage {
+        val scene = scene(GROUP, "andesite_tunnel_split")
 
         pullLever(scene.at(2, 6, 2))
 
@@ -34,13 +34,13 @@ class ItemsTest {
                 containerHolds(scene.at(4, 2, 2), BRASS_INGOT, 3)
         }
 
-        restoreHud()
+        scene.restoreHud()
     }
 
     @Test
     @DisplayName("A mechanical arm lights every blaze burner it is pointed at")
-    fun `arm with many outputs`(cluster: ClusterScope) = cluster.driving {
-        val scene = stage(GROUP, "arm_multi_output")
+    fun `arm with many outputs`(cluster: ClusterScope) = cluster.stage {
+        val scene = scene(GROUP, "arm_multi_output")
 
         pullLever(scene.at(2, 3, 1))
 
@@ -57,13 +57,13 @@ class ItemsTest {
             burners.all { blockProperty(it, "blaze") == "kindled" }
         }
 
-        restoreHud()
+        scene.restoreHud()
     }
 
     @Test
     @DisplayName("An arm between two depots leaves the item on one of them, not lost between")
-    fun `arm purgatory`(cluster: ClusterScope) = cluster.driving {
-        val scene = stage(GROUP, "arm_purgatory")
+    fun `arm purgatory`(cluster: ClusterScope) = cluster.stage {
+        val scene = scene(GROUP, "arm_purgatory")
 
         val first = scene.at(3, 2, 1)
         val second = scene.at(1, 2, 1)
@@ -89,13 +89,13 @@ class ItemsTest {
             "The second depot holds ${onSecond.count} of them rather than the one there was",
         )
 
-        restoreHud()
+        scene.restoreHud()
     }
 
     @Test
     @DisplayName("Attribute filters sort a belt's load into a chest apiece")
-    fun `attribute filters`(cluster: ClusterScope) = cluster.driving {
-        val scene = stage(GROUP, "attribute_filters")
+    fun `attribute filters`(cluster: ClusterScope) = cluster.stage {
+        val scene = scene(GROUP, "attribute_filters")
 
         pullLever(scene.at(2, 3, 1))
 
@@ -117,13 +117,13 @@ class ItemsTest {
             sorted.all { (where, item) -> containerHolds(where, item) } && containerIsEmpty(end)
         }
 
-        restoreHud()
+        scene.restoreHud()
     }
 
     @Test
     @DisplayName("A belt coaster carries all but two of its load to the top")
-    fun `belt coaster`(cluster: ClusterScope) = cluster.driving {
-        val scene = stage(GROUP, "belt_coaster")
+    fun `belt coaster`(cluster: ClusterScope) = cluster.stage {
+        val scene = scene(GROUP, "belt_coaster")
 
         val input = scene.at(1, 5, 6)
         val output = scene.at(3, 8, 6)
@@ -134,13 +134,13 @@ class ItemsTest {
             totalItemsIn(output) == 27 && totalItemsIn(input) == 2
         }
 
-        restoreHud()
+        scene.restoreHud()
     }
 
     @Test
     @DisplayName("A brass tunnel sends each kind of item down the belt its filter names")
-    fun `brass tunnel filtering`(cluster: ClusterScope) = cluster.driving {
-        val scene = stage(GROUP, "brass_tunnel_filtering")
+    fun `brass tunnel filtering`(cluster: ClusterScope) = cluster.stage {
+        val scene = scene(GROUP, "brass_tunnel_filtering")
 
         pullLever(scene.at(2, 3, 2))
 
@@ -156,13 +156,13 @@ class ItemsTest {
             sorted.all { (where, item, count) -> containerHolds(where, item, count) }
         }
 
-        restoreHud()
+        scene.restoreHud()
     }
 
     @Test
     @DisplayName("Prefer nearest keeps each item on the belt it came in on")
-    fun `brass tunnel prefer nearest`(cluster: ClusterScope) = cluster.driving {
-        val scene = stage(GROUP, "brass_tunnel_prefer_nearest")
+    fun `brass tunnel prefer nearest`(cluster: ClusterScope) = cluster.stage {
+        val scene = scene(GROUP, "brass_tunnel_prefer_nearest")
 
         pullLever(scene.at(2, 3, 2))
 
@@ -178,24 +178,24 @@ class ItemsTest {
             outputs.all { containerHolds(it, BRASS_CASING) }
         }
 
-        restoreHud()
+        scene.restoreHud()
     }
 
     @Test
     @DisplayName("Round robin takes the belts in turn")
-    fun `brass tunnel round robin`(cluster: ClusterScope) = cluster.driving {
+    fun `brass tunnel round robin`(cluster: ClusterScope) = cluster.stage {
         sharedOut("brass_tunnel_round_robin", "ROUND_ROBIN", listOf(1, 2, 3).map { BlockPos(7, 3, it) })
     }
 
     @Test
     @DisplayName("Split shares what arrives out between the belts")
-    fun `brass tunnel split`(cluster: ClusterScope) = cluster.driving {
+    fun `brass tunnel split`(cluster: ClusterScope) = cluster.stage {
         sharedOut("brass_tunnel_split", "SPLIT", listOf(1, 2, 3).map { BlockPos(7, 2, it) })
     }
 
     /** The two tunnel modes that differ only in how they share, and in nothing else. */
-    private suspend fun sharedOut(structure: String, mode: String, outputs: List<BlockPos>) {
-        val scene = stage(GROUP, structure)
+    private suspend fun Stage.sharedOut(structure: String, mode: String, outputs: List<BlockPos>) {
+        val scene = scene(GROUP, structure)
 
         pullLever(scene.at(2, 3, 2))
 
@@ -207,13 +207,13 @@ class ItemsTest {
             chests.all { containerHolds(it, BRASS_CASING) } && chests.sumOf { totalItemsIn(it) } == 10
         }
 
-        restoreHud()
+        scene.restoreHud()
     }
 
     @Test
     @DisplayName("Synchronize holds every belt until all of them can go")
-    fun `brass tunnel synchronised input`(cluster: ClusterScope) = cluster.driving {
-        val scene = stage(GROUP, "brass_tunnel_sync_input")
+    fun `brass tunnel synchronised input`(cluster: ClusterScope) = cluster.stage {
+        val scene = scene(GROUP, "brass_tunnel_sync_input")
 
         pullLever(scene.at(1, 3, 2))
 
@@ -247,13 +247,13 @@ class ItemsTest {
             outputs.all { containerHolds(it, BRASS_CASING) }
         }
 
-        restoreHud()
+        scene.restoreHud()
     }
 
     @Test
     @DisplayName("A smart observer watches a belt and a funnel and stops them at the right moment")
-    fun `smart observer on a belt and a funnel`(cluster: ClusterScope) = cluster.driving {
-        val scene = stage(GROUP, "smart_observer_belt_and_funnel")
+    fun `smart observer on a belt and a funnel`(cluster: ClusterScope) = cluster.stage {
+        val scene = scene(GROUP, "smart_observer_belt_and_funnel")
 
         pullLever(scene.at(6, 3, 2))
 
@@ -268,26 +268,26 @@ class ItemsTest {
             arrived.all { blockAt(it) == DIAMOND_BLOCK } && overflow.all { blockAt(it) == AIR }
         }
 
-        restoreHud()
+        scene.restoreHud()
     }
 
     @Test
     @DisplayName("A smart observer watching chutes stops them once the block is placed")
-    fun `smart observer on chutes`(cluster: ClusterScope) = cluster.driving {
-        val scene = stage(GROUP, "smart_observer_chutes")
+    fun `smart observer on chutes`(cluster: ClusterScope) = cluster.stage {
+        val scene = scene(GROUP, "smart_observer_chutes")
 
         pullLever(scene.at(1, 5, 2))
 
         val output = scene.at(1, 5, 3)
         scene.succeedWhen("smart_observer_chutes", DEFAULT) { blockAt(output) == DIAMOND_BLOCK }
 
-        restoreHud()
+        scene.restoreHud()
     }
 
     @Test
     @DisplayName("A smart observer counts what a chest is holding onto a nixie tube")
-    fun `smart observer counting`(cluster: ClusterScope) = cluster.driving {
-        val scene = stage(GROUP, "smart_observer_counting")
+    fun `smart observer counting`(cluster: ClusterScope) = cluster.stage {
+        val scene = scene(GROUP, "smart_observer_counting")
 
         val chest = scene.at(3, 2, 1)
         val doubleChest = scene.at(2, 2, 3)
@@ -302,13 +302,13 @@ class ItemsTest {
                 nixieText(doubleChestNixie).trim().toIntOrNull() == inDoubleChest
         }
 
-        restoreHud()
+        scene.restoreHud()
     }
 
     @Test
     @DisplayName("A smart observer with a filter lights only the lamp its filter matches")
-    fun `smart observer on filtered storage`(cluster: ClusterScope) = cluster.driving {
-        val scene = stage(GROUP, "smart_observer_filtered_storage")
+    fun `smart observer on filtered storage`(cluster: ClusterScope) = cluster.stage {
+        val scene = scene(GROUP, "smart_observer_filtered_storage")
 
         pullLever(scene.at(2, 3, 1))
 
@@ -319,26 +319,26 @@ class ItemsTest {
             blockProperty(left, "lit") == "true" && blockProperty(right, "lit") == "false"
         }
 
-        restoreHud()
+        scene.restoreHud()
     }
 
     @Test
     @DisplayName("A smart observer watching a storage lights its lamp")
-    fun `smart observer on storage`(cluster: ClusterScope) = cluster.driving {
-        val scene = stage(GROUP, "smart_observer_storage")
+    fun `smart observer on storage`(cluster: ClusterScope) = cluster.stage {
+        val scene = scene(GROUP, "smart_observer_storage")
 
         pullLever(scene.at(1, 3, 2))
 
         val lamp = scene.at(1, 2, 3)
         scene.succeedWhen("smart_observer_storage", DEFAULT) { blockProperty(lamp, "lit") == "true" }
 
-        restoreHud()
+        scene.restoreHud()
     }
 
     @Test
     @DisplayName("A flap display spells out what the depots beside it are holding")
-    fun `depot display`(cluster: ClusterScope) = cluster.driving {
-        val scene = stage(GROUP, "depot_display")
+    fun `depot display`(cluster: ClusterScope) = cluster.stage {
+        val scene = scene(GROUP, "depot_display")
 
         listOf(scene.at(2, 5, 0), scene.at(1, 5, 0)).forEach { pullLever(it) }
 
@@ -355,13 +355,13 @@ class ItemsTest {
             }
         }
 
-        restoreHud()
+        scene.restoreHud()
     }
 
     @Test
     @DisplayName("A threshold switch lights its lamp once the chest is full enough")
-    fun `threshold switch`(cluster: ClusterScope) = cluster.driving {
-        val scene = stage(GROUP, "threshold_switch")
+    fun `threshold switch`(cluster: ClusterScope) = cluster.stage {
+        val scene = scene(GROUP, "threshold_switch")
 
         val chest = scene.at(1, 2, 1)
         val lamp = scene.at(2, 3, 1)
@@ -378,13 +378,13 @@ class ItemsTest {
 
         scene.succeedWhen("threshold_switch", DEFAULT) { blockProperty(lamp, "lit") == "true" }
 
-        restoreHud()
+        scene.restoreHud()
     }
 
     @Test
     @DisplayName("A chain of storages carries a chest's worth of oddments from one end to the other")
-    fun `storages`(cluster: ClusterScope) = cluster.driving {
-        val scene = stage(GROUP, "storages")
+    fun `storages`(cluster: ClusterScope) = cluster.stage {
+        val scene = scene(GROUP, "storages")
 
         val startChest = scene.at(13, 3, 1)
         val endShulker = scene.at(1, 3, 1)
@@ -398,13 +398,13 @@ class ItemsTest {
         // tick in, and upstream finishes with as little as twenty ticks to spare.
         scene.succeedWhen("storages", FIFTEEN_SECONDS) { tallyOf(endShulker).holdsAllOf(setOut) }
 
-        restoreHud()
+        scene.restoreHud()
     }
 
     @Test
     @DisplayName("A vault's comparator reads the same whatever size the vault is")
-    fun `vault comparator output`(cluster: ClusterScope) = cluster.driving {
-        val scene = stage(GROUP, "vault_comparator_output")
+    fun `vault comparator output`(cluster: ClusterScope) = cluster.stage {
+        val scene = scene(GROUP, "vault_comparator_output")
 
         val small = scene.at(3, 2, 1) to scene.at(1, 4, 1)
         val medium = scene.at(4, 2, 4) to scene.at(1, 5, 4)
@@ -433,13 +433,13 @@ class ItemsTest {
             listOf(small, medium, big).all { (nixie, _) -> nixiePower(nixie) == 7 }
         }
 
-        restoreHud()
+        scene.restoreHud()
     }
 
     @Test
     @DisplayName("A depot's comparator reads what is standing on it")
-    fun `depot comparator output`(cluster: ClusterScope) = cluster.driving {
-        val scene = stage(GROUP, "depot_comparator_output")
+    fun `depot comparator output`(cluster: ClusterScope) = cluster.stage {
+        val scene = scene(GROUP, "depot_comparator_output")
 
         val sword = scene.at(7, 2, 1)
         val diamond = scene.at(5, 2, 1)
@@ -467,13 +467,13 @@ class ItemsTest {
                 nixiePower(halfPearls) == 8
         }
 
-        restoreHud()
+        scene.restoreHud()
     }
 
     @Test
     @DisplayName("Every kind of fan processing lights its lamp")
-    fun `fan processing`(cluster: ClusterScope) = cluster.driving {
-        val scene = stage(GROUP, "fan_processing")
+    fun `fan processing`(cluster: ClusterScope) = cluster.stage {
+        val scene = scene(GROUP, "fan_processing")
 
         // Laid back down by hand, and Create's own test says why with a shrug: the redstone in the
         // saved structure explodes when the machine is placed.
@@ -487,7 +487,7 @@ class ItemsTest {
             lamps.all { blockProperty(it, "lit") == "true" }
         }
 
-        restoreHud()
+        scene.restoreHud()
     }
 
     private companion object {
