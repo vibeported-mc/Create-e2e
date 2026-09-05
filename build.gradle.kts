@@ -85,6 +85,69 @@ tasks.register<JacocoReport>("coverageReport") {
     }
 }
 
+/**
+ * The same, but only what the dedicated server ran.
+ *
+ * A separate report because the interesting question is not how much of Create the suite reached, it
+ * is *which half of Create the server reached*. A class the server executes at all is a class whose
+ * every branch the server may execute -- and a branch that names a client type takes the server down
+ * when it is taken. Reading the two apart is what turns "not covered" into "not covered, on the side
+ * that has no such class to load".
+ */
+tasks.register<JacocoReport>("serverCoverageReport") {
+    group = "verification"
+    description = "Reports which of Create's code the dedicated server executed, apart from the clients."
+
+    val create = rootDir.resolve("../Create")
+
+    executionData(
+        fileTree(layout.buildDirectory.dir("coverage")) { include("server.exec") }
+    )
+
+    sourceDirectories.setFrom(files(create.resolve("src/main/java")))
+    classDirectories.setFrom(
+        fileTree(create.resolve("build/classes/java/main")) { include("com/simibubi/create/**") }
+    )
+
+    reports {
+        html.required = true
+        xml.required = true
+        html.outputLocation = layout.buildDirectory.dir("reports/jacoco/serverCoverageReport/html")
+        xml.outputLocation = layout.buildDirectory.file("reports/jacoco/serverCoverageReport/server.xml")
+    }
+}
+
+/**
+ * And the same for the clients, apart from the server.
+ *
+ * The other half of the pair. What the clients run is the half of Create that no server-side
+ * assertion can reach -- screens, renderers, particles, and the whole of Ponder -- so it is the half
+ * where a gap in coverage means a gap in what is being tested at all rather than a branch the server
+ * never takes.
+ */
+tasks.register<JacocoReport>("clientCoverageReport") {
+    group = "verification"
+    description = "Reports which of Create's code the game clients executed, apart from the server."
+
+    val create = rootDir.resolve("../Create")
+
+    executionData(
+        fileTree(layout.buildDirectory.dir("coverage")) { include("client-*.exec") }
+    )
+
+    sourceDirectories.setFrom(files(create.resolve("src/main/java")))
+    classDirectories.setFrom(
+        fileTree(create.resolve("build/classes/java/main")) { include("com/simibubi/create/**") }
+    )
+
+    reports {
+        html.required = true
+        xml.required = true
+        html.outputLocation = layout.buildDirectory.dir("reports/jacoco/clientCoverageReport/html")
+        xml.outputLocation = layout.buildDirectory.file("reports/jacoco/clientCoverageReport/client.xml")
+    }
+}
+
 // ModDevGradle adds its own repositories here, which makes Gradle prefer project repositories and
 // ignore the ones the settings file declares. Everything needed has to be named again.
 repositories {
@@ -150,8 +213,6 @@ neoForge {
         // the extra minute buys more of the timing-sensitive failures than it is worth. The floor is
         // not the pool anyway -- TrainCircuitTest alone takes three and a half minutes, and its
         // phases are a sequence.
-        // TEMPORARY: one client while the ponder tests are being written, so a scene can be
-        // watched playing without five others competing for the window.
-        clientPool = 1
+        clientPool = 6
     }
 }
