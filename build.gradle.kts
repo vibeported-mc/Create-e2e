@@ -24,6 +24,15 @@ tasks.withType<KotlinCompile>().configureEach {
 
 tasks.withType<Test>().configureEach {
     useJUnitPlatform()
+
+    // The whole suite shares one world and one cluster, so the order classes run in is part of what
+    // is being tested rather than an implementation detail. Ordered by @Order, which lets a class
+    // that is known to bring a game down go first -- whatever follows it is then a standing check
+    // that the driver put the cluster back together.
+    systemProperty(
+        "junit.jupiter.testclass.order.default",
+        "org.junit.jupiter.api.ClassOrderer\$OrderAnnotation",
+    )
     testLogging {
         events("passed", "skipped", "failed")
         exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL

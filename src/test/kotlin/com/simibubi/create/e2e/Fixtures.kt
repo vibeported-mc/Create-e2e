@@ -10,6 +10,7 @@ import dev.vibeported.mc.driver.screenshot
 import dev.vibeported.mc.driver.server
 import dev.vibeported.mc.driver.setUiLayer
 import dev.vibeported.mc.driver.useBlock
+import dev.vibeported.mc.driver.whileGamesLive
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import net.minecraft.core.BlockPos
@@ -60,34 +61,17 @@ internal fun ClusterScope.driving(
     within: Duration = 4.minutes,
     body: suspend () -> Unit,
 ): Unit = runBlocking {
+    // Both are idempotent, and after a crash the driver has already put back whatever died -- so
+    // these are also what re-arms a test that follows one. Nothing here has to know that: a game
+    // dying is the driver's business, and it fails the test that broke it and rebuilds the cluster
+    // before the next one starts. @see dev.vibeported.mc.driver.junit.DriverExtension
     startServer()
     startClient(ALEX)
-    requireGamesAlive("before this test started")
 
-    try {
-        withTimeout(within) { body() }
-    } finally {
-        // After the body, whatever it did. A game that has gone is the real reason for whatever the
-        // body reported, and saying so here is the difference between one honest failure and a dozen
-        // confusing ones.
-        requireGamesAlive("during this test")
-    }
-}
-
-/**
- * Fails plainly when a game has died, rather than letting the next call time out.
- *
- * Create crashing the dedicated server is exactly the kind of thing this module exists to catch, and
- * it is worth reading as that. Without this the crash surfaces as a driver call to a node that is no
- * longer there -- and then as the same thing again for every test after it, none of which mention a
- * server at all. The crash report the game wrote says what actually happened; this points at it.
- */
-private fun ClusterScope.requireGamesAlive(when_: String) {
-    val dead = deadProcess() ?: return
-    error(
-        "mcdriver: the `${dead.name}` process died $when_. Nothing after this can run. " +
-            "Look at its log under build/e2e/logs, and at run/driverServer/crash-reports."
-    )
+    // `whileGamesLive` is what makes a crash arrive promptly. Without it the body simply stops
+    // getting answers -- its next call is to a game that has gone -- and the test spends its whole
+    // deadline waiting before anything says why. With it, the crash is the failure.
+    whileGamesLive { withTimeout(within) { body() } }
 }
 
 /**
@@ -117,6 +101,24 @@ internal object Zones {
     const val PORTABLE_FLUID: Int = 1344
     const val PORTABLE_HARVEST: Int = 1408
     const val PROCESSING: Int = 1472
+
+    // The screen tests mostly need one block and a place to stand, so they sit closer still.
+    const val SEQUENCED_GEARSHIFT: Int = 2048
+    const val VALUE_SETTINGS: Int = 2080
+    const val THRESHOLD_SWITCH: Int = 2112
+    const val DISPLAY_LINK: Int = 2144
+    const val ELEVATOR_CONTACT: Int = 2176
+    const val FACTORY_PANEL: Int = 2208
+    const val FILTER: Int = 2240
+    const val LINKED_CONTROLLER: Int = 2272
+    const val PACKAGE_PORT: Int = 2304
+    const val REDSTONE_REQUESTER: Int = 2336
+    const val SCHEMATICANNON: Int = 2368
+    const val SCHEMATIC_TABLE: Int = 2400
+    const val STOCK_KEEPER: Int = 2432
+    const val TOOLBOX: Int = 2464
+    const val CLIPBOARD: Int = 2496
+    const val BLUEPRINT: Int = 2528
 }
 
 /**
@@ -262,13 +264,26 @@ private suspend fun awaitCamera(from: Vec3, settle: Int) {
 /**
  * Stands within reach of a block and right-clicks it, the way a player uses one.
  *
- * A couple of blocks back and a little below, which is where the originals put the player, so the
- * face being aimed at is well inside reach. The turn itself is [useBlock]'s job -- it faces the
- * block, makes sure the mouse is on the world rather than a screen, and clicks.
+ * Feet on `pos.y` -- the top of whatever holds the block up -- and three blocks back, so the player
+ * is standing on the ground beside it looking level, exactly where a person would be.
+ *
+ * The originals stood a block *below* the block's centre, and copying that put the player inside the
+ * floor. These scenes clear their own ground first and `clearGround` lays its floor one block under
+ * the target, so that spot is mid-air: the player falls, clips half a block into the stone, and ends
+ * up embedded in it. From in there the view is black, the raycast hits the floor at point-blank
+ * range, and the click lands on nothing -- which reads as "the screen never opened" and says nothing
+ * about where the player actually was. Standing on solid ground also means the aim no longer depends
+ * on flight having taken effect before the teleport arrives.
+ *
+ * The turn itself is [useBlock]'s job -- it faces the block, makes sure the mouse is on the world
+ * rather than a screen, and clicks.
  */
 internal suspend fun rightClickBlock(pos: BlockPos) {
-    val centre = Vec3.atCenterOf(pos)
-    standAt(centre.add(0.0, -1.0, 2.5), centre, settle = 10)
+    standAt(
+        Vec3(pos.x + 0.5, pos.y.toDouble(), pos.z + 3.5),
+        Vec3.atCenterOf(pos),
+        settle = 10,
+    )
     client(ALEX, pos) { where -> useBlock(where) }
 }
 
