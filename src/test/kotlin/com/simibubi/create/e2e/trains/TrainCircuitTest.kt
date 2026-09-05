@@ -928,8 +928,14 @@ class TrainCircuitTest {
     private suspend fun graphCount(): Int = server(MIDDLE_X, MIDDLE_Z) { middleX, middleZ ->
         Create.RAILWAYS.trackNetworks.values.count { graph ->
             graph.nodes.any { node ->
-                kotlin.math.abs(node.x - middleX) <= CIRCUIT_REACH &&
-                    kotlin.math.abs(node.z - middleZ) <= CIRCUIT_REACH
+                // Through `location`, not off the node itself. A `TrackNodeLocation` is a `Vec3i`
+                // holding twice each coordinate -- it has to name half-block positions, and that is
+                // how it does it -- so a node compared against world coordinates never matches
+                // anything and the count is silently zero.
+                val where = node.location
+
+                kotlin.math.abs(where.x - middleX) <= CIRCUIT_REACH &&
+                    kotlin.math.abs(where.z - middleZ) <= CIRCUIT_REACH
             }
         }
     }
