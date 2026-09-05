@@ -126,11 +126,15 @@ private suspend fun aCleanSlate() {
     // crosshair is a click that lands on an animal rather than on the block being tested -- and all
     // three read as the mod misbehaving rather than as the weather.
     //
-    // The gamerule stops anything new arriving; peaceful clears the hostiles already about. What is
-    // deliberately not done is killing what is left standing: the stock keeper's shop is minded by a
-    // pig, a train is a contraption entity, and a blanket kill would take both.
+    // The gamerule is the whole of it, and deliberately so. Peaceful would also do the job and was
+    // what this did at first, but it does more than stop things arriving: a zombie cannot exist at
+    // all on peaceful, and one of these tests dresses one in a backtank to see whether it survives
+    // being dropped in lava. Nothing spawns of its own accord either way.
+    //
+    // What is deliberately not done is killing what is left standing: the stock keeper's shop is
+    // minded by a pig, a train is a contraption entity, and a blanket kill would take both.
     runCommand("gamerule doMobSpawning false")
-    runCommand("difficulty peaceful")
+    runCommand("difficulty normal")
 
     setUiLayer(ALEX, UiLayer.GUI, true)
 
@@ -209,6 +213,14 @@ internal object Zones {
      * world's own grass rather than on a floor of its own. So it is given the far end to itself.
      */
     const val TRAIN_CIRCUIT: Int = 3200
+
+    /**
+     * Where Create's own saved machines are laid down, one after another in the same spot.
+     *
+     * They are structures rather than scenes -- the game places them from a file -- so they need
+     * room to be cleared and rebuilt rather than a patch each.
+     */
+    const val GAMETEST: Int = 3600
 }
 
 /**

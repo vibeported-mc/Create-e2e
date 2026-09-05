@@ -917,7 +917,22 @@ class TrainCircuitTest {
 
     // -- what the server knows -------------------------------------------------------------------
 
-    private suspend fun graphCount(): Int = server(ALEX) { Create.RAILWAYS.trackNetworks.size }
+    /**
+     * How many separate railways there are *on this circuit*, which for one closed ring is one.
+     *
+     * Counted by what has a node inside the circuit's own ground rather than by asking the world how
+     * many railways it has. The world has others: every station test lays a run of track of its own,
+     * and a railway laid once stays on the books after the blocks are cleared away -- so the global
+     * count says three whatever this circuit did, and says it whether the ring closed or not.
+     */
+    private suspend fun graphCount(): Int = server(MIDDLE_X, MIDDLE_Z) { middleX, middleZ ->
+        Create.RAILWAYS.trackNetworks.values.count { graph ->
+            graph.nodes.any { node ->
+                kotlin.math.abs(node.x - middleX) <= CIRCUIT_REACH &&
+                    kotlin.math.abs(node.z - middleZ) <= CIRCUIT_REACH
+            }
+        }
+    }
 
     private suspend fun trainCount(): Int = server(ALEX) { Create.RAILWAYS.trains.size }
 
@@ -1304,6 +1319,15 @@ class TrainCircuitTest {
         val SIDES = arrayOf(Direction.SOUTH, Direction.EAST, Direction.NORTH, Direction.WEST)
 
         val LENGTHS = intArrayOf(20, 20, 20, 20)
+
+        /**
+         * How far the circuit reaches from its middle, for telling its own rails from other tests'.
+         *
+         * The ring is a little over twenty across each way and the corners swing wider still, so this
+         * takes in the whole of it and nothing near it -- the nearest other railway is hundreds of
+         * blocks off.
+         */
+        const val CIRCUIT_REACH = 40
 
         /** The middle of the square, which every straight faces. */
         const val MIDDLE_X = 70
