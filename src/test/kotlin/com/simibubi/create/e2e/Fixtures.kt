@@ -221,6 +221,9 @@ internal object Zones {
      * room to be cleared and rebuilt rather than a patch each.
      */
     const val GAMETEST: Int = 3600
+
+    /** Room for a scene that exists to be flown around rather than asserted on. */
+    const val MOTOR_RENDERING: Int = 3800
 }
 
 /**
