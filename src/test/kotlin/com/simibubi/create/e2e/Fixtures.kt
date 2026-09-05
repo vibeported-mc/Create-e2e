@@ -93,7 +93,15 @@ internal fun ClusterScope.driving(
         // cancelled coroutine is refused before it is sent -- which is exactly the case where
         // something is most likely to be left standing. `runCatching` because a client that has
         // died cannot be tidied up and that is not this test's failure to report either.
-        withContext(NonCancellable) { runCatching { closeAnyScreen() } }
+        withContext(NonCancellable) {
+            runCatching { closeAnyScreen() }
+
+            // And the machines' ground swept, whoever was using it. Clearing it when the next
+            // structure wants it is too late by a whole test: what a scene leaves standing -- a
+            // contraption still riding its track -- is then there for the length of the run that
+            // follows, in every picture it takes and in the way of everything it builds.
+            runCatching { com.simibubi.create.e2e.gametest.clearTheStage() }
+        }
     }
 
     // Left as a failure of the test that did it rather than of whichever test runs next and finds

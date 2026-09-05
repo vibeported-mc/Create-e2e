@@ -1,8 +1,8 @@
 package com.simibubi.create.e2e.gametest
 
 import com.simibubi.create.e2e.ALEX
+import dev.vibeported.mc.driver.client
 import com.simibubi.create.e2e.Zones
-import com.simibubi.create.e2e.killLooseItems
 import com.simibubi.create.e2e.runCommand
 import com.simibubi.create.e2e.serverTicks
 import com.simibubi.create.e2e.shot
@@ -84,10 +84,18 @@ internal suspend fun stage(group: String, name: String): Scene {
         Vec3(ORIGIN.x + 8.0, ORIGIN.y + 4.0, ORIGIN.z + 8.0),
     )
 
-    // The ground the last machine stood on, taken back. These share one world and one spot, and a
-    // chest left standing from the test before is a chest this one would read as its own output.
-    runCommand("fill ${CLEAR_LOW.x} ${CLEAR_LOW.y} ${CLEAR_LOW.z} ${CLEAR_HIGH.x} ${CLEAR_HIGH.y} ${CLEAR_HIGH.z} air")
-    killLooseItems()
+    // The ground the last machine stood on, taken back -- what was built and whatever is still
+    // standing on it. These share one world and one spot, and a chest left over from the test before
+    // is a chest this one would read as its own output.
+    val swept = clearTheStage()
+
+    check(swept.refused.isEmpty()) {
+        "The stage could not be cleared before $name was laid down: ${swept.refused} would not go"
+    }
+    check(swept.ghosts.isEmpty()) {
+        "The stage was cleared before $name was laid down, but the client is still drawing " +
+            "${swept.ghosts}"
+    }
 
     val id = "create:gametest/$group/$name"
     val size = sizeOf(id)
@@ -137,6 +145,127 @@ internal suspend fun watch(scene: Scene) {
         middle,
     )
 }
+
+/**
+ * The machines' ground put back to nothing: the blocks it was built of, and everything standing on
+ * it.
+ *
+ * All of it through the level rather than through commands, and each half for its own reason.
+ *
+ * The blocks, because `/fill` is a command and a command that will not parse fails quietly --
+ * `performPrefixedCommand` hands back a result nobody reads -- so a mistake in one looks exactly
+ * like ground that was already clear. This counts what it took, which is a thing that can be
+ * believed.
+ *
+ * The entities, because clearing blocks does not touch them and most of what these scenes leave
+ * behind is not a block. A contraption is an entity, and so are the minecart carrying it, the seat
+ * somebody sat in, the armour stand a backtank hung on, the zombie dropped in lava and the cow that
+ * rode a lift. Replacing the ground beneath them does nothing at all: they stay where they were, and
+ * the next machine is built around and through them.
+ *
+ * Discarded rather than killed. Killing a mob leaves its drops on the floor and killing a contraption
+ * scatters the casings it was built from, which is the same mess wearing a different hat.
+ */
+internal suspend fun clearTheStage(): Swept {
+    val swept = sweepTheGround()
+
+    // A removal is not a thing the client is told about at once: the server marks the entity gone
+    // and its tracker sends word on a later tick. Sweeping and then stopping -- which is what a
+    // teardown does -- leaves the client drawing something that no longer exists, and a window
+    // showing a contraption is indistinguishable from a stage that was never cleared.
+    serverTicks(SWEEP_SETTLE)
+
+    return swept.copy(ghosts = whatTheClientStillDraws())
+}
+
+/** What the client still has near the stage, which after a sweep should be nothing. */
+private suspend fun whatTheClientStillDraws(): List<String> = client(ALEX, CLEAR_LOW) { low ->
+    val level = minecraft.level ?: return@client Ghosts(emptyList())
+
+    Ghosts(
+        level.entitiesForRendering()
+            .filter { entity ->
+                entity !is net.minecraft.world.entity.player.Player &&
+                    kotlin.math.abs(entity.blockPosition().x - low.x) <= STRAY_REACH &&
+                    kotlin.math.abs(entity.blockPosition().z - low.z) <= STRAY_REACH
+            }
+            .map { entity ->
+                net.minecraft.core.registries.BuiltInRegistries.ENTITY_TYPE
+                    .getKey(entity.type).toString() + " at " + entity.blockPosition().toShortString()
+            }
+    )
+}.values
+
+@Serializable
+internal data class Ghosts(val values: List<String>)
+
+private const val SWEEP_SETTLE = 4
+
+private suspend fun sweepTheGround(): Swept = server(CLEAR_LOW, CLEAR_HIGH) { low, high ->
+    val air = net.minecraft.world.level.block.Blocks.AIR.defaultBlockState()
+    var blocks = 0
+
+    // The ground first, so that anything a removal shakes loose -- a bearing letting go of what it
+    // was holding -- is still there to be swept up by the pass that follows.
+    for (pos in net.minecraft.core.BlockPos.betweenClosed(low, high)) {
+        if (serverLevel.getBlockState(pos).isAir) continue
+
+        // Told to the clients but not to the neighbours: this is a whole region going at once, and
+        // a cascade of updates through blocks that are themselves about to go is work for nothing.
+        serverLevel.setBlock(pos.immutable(), air, net.minecraft.world.level.block.Block.UPDATE_CLIENTS)
+        blocks++
+    }
+
+    // And then whatever is standing about. The box reaches well past the ground the structures stand
+    // on, because some of these do not merely drift: a roller rides a minecart along its own track
+    // and is a good way from where it started by the time its test has finished.
+    val box = net.minecraft.world.phys.AABB(
+        (low.x - STRAY_REACH).toDouble(),
+        (low.y - STRAY_HEIGHT).toDouble(),
+        (low.z - STRAY_REACH).toDouble(),
+        (high.x + STRAY_REACH).toDouble(),
+        (high.y + STRAY_HEIGHT).toDouble(),
+        (high.z + STRAY_REACH).toDouble(),
+    )
+
+    val standing = serverLevel.getEntities(null as net.minecraft.world.entity.Entity?, box) {
+        it !is net.minecraft.world.entity.player.Player
+    }
+
+    standing.forEach { it.discard() }
+
+    // What did not go. An entity that refuses to be discarded is worth naming rather than assuming
+    // away: the whole point of doing this through the level was to be able to tell an empty stage
+    // from a sweep that quietly did nothing.
+    val refused = standing.filter { !it.isRemoved }.map {
+        "${net.minecraft.core.registries.BuiltInRegistries.ENTITY_TYPE.getKey(it.type)} " +
+            "at ${it.blockPosition().toShortString()}"
+    }
+
+    Swept(standing.size, blocks, refused)
+}
+
+/** What a sweep took, so that one which took nothing can be told from one that was never asked. */
+@Serializable
+internal data class Swept(
+    val entities: Int,
+    val blocks: Int,
+    val refused: List<String> = emptyList(),
+    val ghosts: List<String> = emptyList(),
+)
+
+/**
+ * How far past the cleared ground to look for whatever wandered off it.
+ *
+ * Only the entities are looked for this far. The blocks are cleared over the ground the structures
+ * are actually laid on, because a box this wide is two million of them and none of them are built.
+ *
+ * Nowhere near anything else either way: the nearest scene of any other kind is three hundred blocks
+ * up the z axis, so this reaches only over ground that belongs to these machines.
+ */
+private const val STRAY_REACH = 64
+
+private const val STRAY_HEIGHT = 32
 
 /** How big a saved structure is, asked of the server that has the file. */
 private suspend fun sizeOf(id: String): BlockPos = server(id) { named ->
