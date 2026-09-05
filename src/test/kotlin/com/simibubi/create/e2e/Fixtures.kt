@@ -1,14 +1,19 @@
 package com.simibubi.create.e2e
 
 import dev.vibeported.mc.driver.ClusterScope
+import dev.vibeported.mc.driver.MouseButton
 import dev.vibeported.mc.driver.UiLayer
+import dev.vibeported.mc.driver.allowFlight
+import dev.vibeported.mc.driver.click
 import dev.vibeported.mc.driver.client
 import dev.vibeported.mc.driver.screenshot
 import dev.vibeported.mc.driver.server
 import dev.vibeported.mc.driver.setUiLayer
+import dev.vibeported.mc.driver.useBlock
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import net.minecraft.core.BlockPos
+import net.minecraft.world.phys.Vec3
 import net.minecraft.world.level.material.Fluid
 import net.minecraft.world.level.material.Fluids
 import java.util.Locale
@@ -80,7 +85,7 @@ internal fun ClusterScope.driving(
 private fun ClusterScope.requireGamesAlive(when_: String) {
     val dead = deadProcess() ?: return
     error(
-        "mcdriver: the $dead process died $when_. Nothing after this can run. " +
+        "mcdriver: the `${dead.name}` process died $when_. Nothing after this can run. " +
             "Look at its log under build/e2e/logs, and at run/driverServer/crash-reports."
     )
 }
@@ -101,6 +106,17 @@ internal object Zones {
     const val ITEM_LOGISTICS: Int = 256
     const val BRASS_TUNNEL: Int = 384
     const val LOGISTICS: Int = 640
+
+    // The contraption scenes are small -- twenty blocks at the widest -- so they sit closer together
+    // than the belt runs above, which are long.
+    const val WATER_WHEEL: Int = 1024
+    const val ENCASED_FAN: Int = 1088
+    const val MIXER: Int = 1152
+    const val MECHANICAL_ARM: Int = 1216
+    const val MECHANICAL_CRAFTER: Int = 1280
+    const val PORTABLE_FLUID: Int = 1344
+    const val PORTABLE_HARVEST: Int = 1408
+    const val PROCESSING: Int = 1472
 }
 
 /**
@@ -196,6 +212,120 @@ internal suspend fun spectateFrom(
  */
 internal suspend fun lookDownOn(x: Double, y: Double, z: Double, settle: Int = 60) {
     spectateFrom(x, y, z, yaw = 0.0, pitch = 90.0, settle = settle)
+}
+
+/**
+ * Watches [at] from [from], as a spectator.
+ *
+ * `/tp ... facing ...` rather than the trigonometry the originals wrote out by hand: the command
+ * does the same arithmetic, and it is the eye that is aimed either way, so the eye-height correction
+ * [spectateFrom] needs does not arise here.
+ */
+internal suspend fun spectateAt(from: Vec3, at: Vec3, settle: Int = 60) {
+    setUiLayer(ALEX, UiLayer.GUI, false)
+    runCommand("gamemode spectator $ALEX")
+    teleportFacing(from, at)
+    awaitCamera(from, settle)
+}
+
+/**
+ * Stands at [from] looking at [at], in creative and flying.
+ *
+ * The mode matters and is the reason this is not [spectateAt]: a spectator's clicks pass through the
+ * world, so anything that goes on to press a button has to be standing in it. Flying because where a
+ * camera is put need not be where the ground is, and a player who is falling is aiming from
+ * somewhere they are about to leave.
+ */
+internal suspend fun standAt(from: Vec3, at: Vec3, settle: Int = 40) {
+    setUiLayer(ALEX, UiLayer.GUI, false)
+    runCommand("gamemode creative $ALEX")
+    allowFlight(ALEX)
+    teleportFacing(from, at)
+    awaitCamera(from, settle)
+}
+
+private suspend fun teleportFacing(from: Vec3, at: Vec3) {
+    runCommand(
+        "tp %s %.2f %.2f %.2f facing %.2f %.2f %.2f"
+            .format(Locale.ROOT, ALEX, from.x, from.y, from.z, at.x, at.y, at.z)
+    )
+}
+
+private suspend fun awaitCamera(from: Vec3, settle: Int) {
+    val target = BlockPos.containing(from)
+    client(ALEX, target) { where ->
+        awaitUntil { clientPlayer?.blockPosition()?.closerThan(where, 3.0) == true }
+    }
+    client(ALEX, settle) { ticks -> awaitTicks(ticks) }
+}
+
+/**
+ * Stands within reach of a block and right-clicks it, the way a player uses one.
+ *
+ * A couple of blocks back and a little below, which is where the originals put the player, so the
+ * face being aimed at is well inside reach. The turn itself is [useBlock]'s job -- it faces the
+ * block, makes sure the mouse is on the world rather than a screen, and clicks.
+ */
+internal suspend fun rightClickBlock(pos: BlockPos) {
+    val centre = Vec3.atCenterOf(pos)
+    standAt(centre.add(0.0, -1.0, 2.5), centre, settle = 10)
+    client(ALEX, pos) { where -> useBlock(where) }
+}
+
+/** Right-clicks whatever the crosshair is on, without moving. */
+internal suspend fun rightClickAhead() {
+    client(ALEX) { click(MouseButton.RIGHT) }
+}
+
+/**
+ * Puts one of something in the player's hand.
+ *
+ * The command fills the slot; selecting it is the client's own state, so that half happens there.
+ */
+internal suspend fun holdItem(item: String, count: Int = 1) {
+    runCommand("item replace entity $ALEX hotbar.0 with $item $count")
+    client(ALEX) {
+        clientPlayer?.inventory?.setSelectedSlot(0)
+        awaitTicks(1)
+    }
+}
+
+/**
+ * Flattens a patch of the world and puts a stone floor under it.
+ *
+ * The world is shared and lived in, so a scene starts by making room for itself. A wide clearing has
+ * to be a shallow one: the box is filled by a single command, and one of more than thirty-two
+ * thousand blocks is refused outright, without saying so.
+ */
+internal suspend fun clearGround(centre: BlockPos, radius: Int, height: Int = radius + 1) {
+    runCommand(
+        "fill ${centre.x - radius} ${centre.y - 1} ${centre.z - radius} " +
+            "${centre.x + radius} ${centre.y + height} ${centre.z + radius} air"
+    )
+    runCommand(
+        "fill ${centre.x - radius} ${centre.y - 1} ${centre.z - radius} " +
+            "${centre.x + radius} ${centre.y - 1} ${centre.z + radius} stone"
+    )
+    killLooseItems()
+}
+
+/** Empties a box without laying a floor, for scenes that stand on the ground they were given. */
+internal suspend fun clearBox(low: BlockPos, high: BlockPos) {
+    fill(low, high, "air")
+    killLooseItems()
+}
+
+/** Anything a previous scene dropped, which would otherwise be counted by the next one. */
+internal suspend fun killLooseItems() {
+    runCommand("kill @e[type=item]")
+}
+
+/** Drops an item into the world, which is how anything gets into a basin. */
+internal suspend fun dropItem(x: Double, y: Double, z: Double, item: String) {
+    runCommand(
+        "summon minecraft:item %.2f %.2f %.2f {Item:{id:\"%s\",count:1}}"
+            .format(Locale.ROOT, x, y, z, item)
+    )
 }
 
 /** Puts the heads-up display back, so a failure does not leave it hidden for whatever runs next. */
