@@ -101,7 +101,14 @@ tasks.register<JacocoReport>("serverCoverageReport") {
     val create = rootDir.resolve("../Create")
 
     executionData(
-        fileTree(layout.buildDirectory.dir("coverage")) { include("server.exec") }
+        // Every server, not only the run's own. A test that starts a dedicated server for itself
+        // gets one recording per launch -- server-reload.1.exec, server-reload.2.exec -- and those
+        // are as much the server side of Create as the run's own is.
+        //
+        // That they exist at all is worth noticing: a game the driver kills writes nothing, because
+        // killing is TerminateProcess and runs no shutdown hook. These are written because a private
+        // server is asked to shut down, which is the same reason its world is worth reloading.
+        fileTree(layout.buildDirectory.dir("coverage")) { include("server*.exec") }
     )
 
     sourceDirectories.setFrom(files(create.resolve("src/main/java")))
