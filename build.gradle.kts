@@ -179,6 +179,25 @@ dependencies {
     // The mod under test, substituted out of the Create build next door.
     implementation("com.simibubi.create:create-26.2")
 
+    // Sodium, by Modrinth's own coordinates rather than a readable version, because that is what
+    // their Maven serves: project AANobbMI at version gQDMcWww, which is
+    // mc26.2-0.9.2-beta.1-neoforge.
+    //
+    // On the ordinary classpath, which is not the obvious place for a rendering mod. ModDevGradle
+    // used to give each run a classpath of its own, and putting Sodium on the client's alone would
+    // have been exact; for 26.2 that is gone, and asking for it says so in as many words: "there is
+    // no additional classpath anymore for Minecraft 26.2. Add the dependency to a standard
+    // configuration". So it goes everywhere the tests go -- the game client, the dedicated server,
+    // and this process -- and what keeps it off the two that do not draw is Sodium's own
+    // `@Mod(dist = Dist.CLIENT)`, which is FML's business rather than the build's.
+    implementation("maven.modrinth:AANobbMI:gQDMcWww")
+
+    // JourneyMap, on the same terms and for the same reason: Create has a `@JourneyMapPlugin` that
+    // draws the railway network over JourneyMap's fullscreen map, and that plugin is unreachable
+    // without JourneyMap present. Project lfHFW1mp at version Z4HOwlL0, which is 26.2-6.0.7+neoforge
+    // -- two patches ahead of the 6.0.5 Create compiles against.
+    implementation("maven.modrinth:lfHFW1mp:Z4HOwlL0")
+
     implementation("dev.vibeported.mc.e2e:driver")
     implementation(libs.kotlinforforge)
 
