@@ -33,10 +33,15 @@ import org.junit.jupiter.api.Test
  * renderer appends its draws with a `@ModifyReturnValue` on exactly that method, so they are still
  * appended, and `renderGroup` still draws them along with Sodium's own.
  *
- * That is a chain of three assumptions about two other mods' internals, which is why it is a test
- * rather than a comment. Without it, the mods being allowed to load together proves only that FML
- * permitted it -- and the failure this is really guarding against is sub-levels quietly not drawing,
- * which no load check would catch.
+ * <b>What this does not prove.</b> It asserts that a sub-level's sections are *compiled* and that the
+ * client is drawing frames -- not that the sections reach the screen. They do not: under Sodium a
+ * sub-level's block entities appear and the blocks they stand on do not, because the draws are
+ * contributed to a `ChunkSectionsToRender` that Sodium builds and never renders. This passed
+ * throughout that, which is worth remembering about it.
+ *
+ * The remaining work is in Sable, and `SABLE-26.2-OPEN-QUESTIONS.md` records where it stands. Once
+ * sub-level terrain draws under Sodium, the assertion to add here is a pixel one -- the platform in
+ * `SubLevelPhysicsTest` is oak against a stone floor precisely so that it can be told apart.
  */
 @DrivesMinecraft
 class SubLevelsUnderSodiumTest {

@@ -33,6 +33,14 @@ tasks.withType<KotlinCompile>().configureEach {
  */
 val withSimulated = providers.gradleProperty("simulated").orNull != "false"
 
+/**
+ * Whether Sodium is in the game at all.
+ *
+ * On unless `-Psodium=false`. Sodium replaces the chunk renderer, so it is the thing to take away
+ * when a question is "is this rendering fault Sodium's or ours".
+ */
+val withSodium = providers.gradleProperty("sodium").orNull != "false"
+
 // Kept beside the switch rather than in a catalogue, because they track the builds sitting next to
 // this one and move whenever those are republished.
 val SIMULATED_VERSION = "1.3.2"
@@ -54,6 +62,11 @@ tasks.withType<Test>().configureEach {
 
     if (!withSimulated) {
         exclude("**/simulated/**")
+    }
+
+    if (!withSodium) {
+        exclude("**/compat/SodiumTest*")
+        exclude("**/simulated/SubLevelsUnderSodium*")
     }
 
     testLogging {
@@ -240,7 +253,9 @@ dependencies {
     // configuration". So it goes everywhere the tests go -- the game client, the dedicated server,
     // and this process -- and what keeps it off the two that do not draw is Sodium's own
     // `@Mod(dist = Dist.CLIENT)`, which is FML's business rather than the build's.
-    implementation("maven.modrinth:AANobbMI:gQDMcWww")
+    if (withSodium) {
+        implementation("maven.modrinth:AANobbMI:gQDMcWww")
+    }
 
     // JourneyMap, on the same terms and for the same reason: Create has a `@JourneyMapPlugin` that
     // draws the railway network over JourneyMap's fullscreen map, and that plugin is unreachable
