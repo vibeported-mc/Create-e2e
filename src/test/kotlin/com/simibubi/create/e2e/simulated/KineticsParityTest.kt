@@ -50,32 +50,31 @@ class KineticsParityTest {
                 driveWith(origin.west(2), Direction.WEST, rpm = RPM)
                 settleKinetics(origin.east())
             },
-            // The shaft on the *far* side of the gearshift, which is the only reading that says
-            // anything about this block. Its own speed would say a motor next to it turns it, which
-            // is a fact about the motor.
-            read = { origin -> kineticSpeedAt(origin.east()).toDouble() },
+            // The water wheel on the *far* side of the gearshift. Reading the wheel rather than the
+            // shaft beside it means the parity check covers the wheel in both worlds, and the wheel
+            // is the thing whose motion the pictures show -- so what is asserted and what is looked
+            // at are the same object. The gearshift's own speed would say only that a motor next to
+            // it turns it, which is a fact about the motor.
+            read = { origin -> kineticSpeedAt(origin.east(2)).toDouble() },
             expect = Parity.Same(),
         )
 
         assertTrue(
-            relayed.ground != 0.0,
-            "The gearshift is powered on its left side and is relaying nothing: the shaft past it " +
-                "reads ${relayed.ground} with a $RPM rpm motor driving the other side. Left powered " +
-                "means pass rotation straight through, and that is the whole block. See " +
-                relayed.pictures,
+            relayed.ground != 0.0 && relayed.sub != 0.0,
+            "The gearshift is powered on its left side and is relaying nothing. The far water wheel " +
+                "reads ${relayed.ground} on the ground and ${relayed.sub} in the sub-level, with a " +
+                "$RPM rpm motor driving the other side. Left powered means pass rotation straight " +
+                "through, and that is the whole block. See ${relayed.pictures}",
         )
 
-        // The wheel on the far shaft, which is the part of this a person can actually see. It shares
-        // the shaft's network, so a wheel reading zero while the shaft reads ${relayed.ground} means
-        // it never joined -- and the pictures would then show a still wheel next to a turning shaft
-        // and look like a rendering bug.
-        val wheel = kineticSpeedAt(at(-8, 1, 0).east(2)).toDouble()
+        // And the driven wheel, so that a rig which relays nothing because it was never driven in the
+        // first place fails saying so, rather than failing as if the gearshift were at fault.
+        val driving = kineticSpeedAt(at(-SIDE, 1, 0).west(2)).toDouble()
 
         assertTrue(
-            wheel != 0.0,
-            "The water wheel on the relayed shaft is not turning: it reads $wheel where the shaft " +
-                "beside it reads ${relayed.ground}. It is the only thing in these pictures big " +
-                "enough to see move, so if it is not in the network the pictures are worthless. " +
+            driving != 0.0,
+            "The water wheel on the driven side is not turning either ($driving), so the motor never " +
+                "reached the gearshift and nothing downstream of it means anything. " +
                 "See ${relayed.pictures}",
         )
     }
@@ -96,13 +95,46 @@ class KineticsParityTest {
         )
 
         assertTrue(
-            reversed.ground < 0.0,
-            "The gearshift is powered on its right side and is not reversing. The shaft feeding it " +
-                "and the shaft past it have the same sign, so their ratio came out " +
-                "${reversed.ground} where a reversal is negative. Right powered means invert the " +
-                "direction. See ${reversed.pictures}",
+            reversed.ground < 0.0 && reversed.sub < 0.0,
+            "The gearshift is powered on its right side and is not reversing. The two water wheels " +
+                "either side of it turn the same way, so their ratio came out ${reversed.ground} on " +
+                "the ground and ${reversed.sub} in the sub-level, where a reversal is negative. " +
+                "Right powered means invert the direction. See ${reversed.pictures}",
         )
     }
+
+    @Test
+    @DisplayName("A directional gearshift powered on both sides stops relaying, the same in a sub-level")
+    fun `the gearshift stops relaying when both sides are powered`(cluster: ClusterScope) =
+        cluster.stage {
+            val stopped = bothWays(
+                name = "gearshift_stopped",
+                reach = 3,
+                build = { origin -> gearshiftRig(origin, powerAbove = true, powerBelow = true) },
+                stimulate = { origin ->
+                    driveWith(origin.west(2), Direction.WEST, rpm = RPM)
+                    settleKinetics(origin.west(2))
+                },
+                read = { origin -> kineticSpeedAt(origin.east(2)).toDouble() },
+                expect = Parity.Same(),
+            )
+
+            assertTrue(
+                stopped.ground == 0.0 && stopped.sub == 0.0,
+                "The gearshift is powered on both sides and is still relaying: the far water wheel " +
+                    "reads ${stopped.ground} on the ground and ${stopped.sub} in the sub-level, " +
+                    "where both should be still. See ${stopped.pictures}",
+            )
+
+            // The driven side must still be turning, or "nothing came out" is just "nothing went in".
+            val driving = kineticSpeedAt(at(-SIDE, 1, 0).west(2)).toDouble()
+
+            assertTrue(
+                driving != 0.0,
+                "Nothing is coming out of the gearshift, but nothing is going in either ($driving), " +
+                    "so this says nothing about whether it stopped relaying. See ${stopped.pictures}",
+            )
+        }
 
     /**
      * The relayed speed over the driving speed: negative when the gearshift has reversed it.
@@ -112,8 +144,8 @@ class KineticsParityTest {
      * not asserted.
      */
     private suspend fun reversalAcross(origin: BlockPos): Double {
-        val driving = kineticSpeedAt(origin.west()).toDouble()
-        val relayed = kineticSpeedAt(origin.east()).toDouble()
+        val driving = kineticSpeedAt(origin.west(2)).toDouble()
+        val relayed = kineticSpeedAt(origin.east(2)).toDouble()
 
         return if (driving == 0.0) 0.0 else relayed / driving
     }
@@ -125,13 +157,18 @@ class KineticsParityTest {
      * `DirectionalGearshiftBlock.getLeftDirection` is the block's `FACING` and `getRightDirection`
      * its opposite, and `DirectionalGearshiftBlockEntity.getRotationSpeedModifier` returns +1 when
      * the left is powered, -1 when the right is, and 0 for both or neither. So a redstone block above
-     * relays and one below reverses -- and with neither, nothing passes at all, which is the block
-     * working and would make a test that forgot to power it pass for the wrong reason.
+     * relays, one below reverses, and both together stop it. With neither, nothing passes at all --
+     * which is the block working, and would make a test that forgot to power it pass for the wrong
+     * reason.
      *
      * Everything else sits on the x axis, which is what the facing and `axis_along_first` combine to
      * give as the rotation axis.
      */
-    private suspend fun Stage.gearshiftRig(origin: BlockPos, powerAbove: Boolean) {
+    private suspend fun Stage.gearshiftRig(
+        origin: BlockPos,
+        powerAbove: Boolean,
+        powerBelow: Boolean = !powerAbove,
+    ) {
         setBlock(origin, GEARSHIFT)
 
         // The driven side. The motor goes on the far end of this, in `stimulate`.
@@ -143,11 +180,8 @@ class KineticsParityTest {
         setBlock(origin.east(), "create:shaft[axis=x]")
         setBlock(origin.east(2), "create:water_wheel[facing=east]")
 
-        setBlock(if (powerAbove) origin.above() else origin.below(), "minecraft:redstone_block")
-
-        if (powerAbove) {
-            setBlock(origin.below(), "minecraft:stone")
-        }
+        setBlock(origin.above(), if (powerAbove) "minecraft:redstone_block" else "minecraft:air")
+        setBlock(origin.below(), if (powerBelow) "minecraft:redstone_block" else "minecraft:stone")
     }
 
     companion object {
@@ -163,5 +197,8 @@ class KineticsParityTest {
 
         /** Fast enough to be unmistakable, slow enough to be an ordinary network. */
         const val RPM = 32
+
+        /** How far off the stage origin `bothWays` builds the ground rig. Kept in step with it. */
+        const val SIDE = 8
     }
 }
