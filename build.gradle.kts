@@ -40,19 +40,19 @@ val SABLE_VERSION = "2.0.5"
 val SABLE_COMPANION_VERSION = "1.6.0"
 val VEIL_VERSION = "4.4.1"
 
+// Off, the package is not compiled either. Excluding it from the run is not enough: it names Sable's
+// and Simulated's own types, and without those on the classpath it does not compile at all.
+if (!withSimulated) {
+    sourceSets.test {
+        kotlin.exclude("**/simulated/**")
+        java.exclude("**/simulated/**")
+    }
+}
+
 tasks.withType<Test>().configureEach {
     useJUnitPlatform()
 
-    if (withSimulated) {
-        // Sodium and Sable cannot be in one game. Sable declares `incompatible` with Sodium on 26.2
-        // -- "Sable's Sodium integration is not available on this version" -- and FML refuses the
-        // load outright, so the dedicated server exits before the cluster forms and every test in the
-        // run fails at parameter resolution rather than on its own terms.
-        //
-        // So the switch trades one for the other: the Simulated family is in and Sodium's tests are
-        // out. `-Psimulated=false` gives back the original suite, Sodium included.
-        exclude("**/compat/SodiumTest*")
-    } else {
+    if (!withSimulated) {
         exclude("**/simulated/**")
     }
 
@@ -240,9 +240,7 @@ dependencies {
     // configuration". So it goes everywhere the tests go -- the game client, the dedicated server,
     // and this process -- and what keeps it off the two that do not draw is Sodium's own
     // `@Mod(dist = Dist.CLIENT)`, which is FML's business rather than the build's.
-    if (!withSimulated) {
-        implementation("maven.modrinth:AANobbMI:gQDMcWww")
-    }
+    implementation("maven.modrinth:AANobbMI:gQDMcWww")
 
     // JourneyMap, on the same terms and for the same reason: Create has a `@JourneyMapPlugin` that
     // draws the railway network over JourneyMap's fullscreen map, and that plugin is unreachable
