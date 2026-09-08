@@ -52,15 +52,15 @@ class SubLevelPhysicsTest {
         setBlock(at(0, 0, 0), "minecraft:stone")
 
         // Spawned above the floor, so the drop is a drop rather than a landing it started in.
-        spawnPlatform(at(0, SPAWN_HEIGHT, 0), size = PLATFORM)
+        val platform = spawnPlatform(at(0, SPAWN_HEIGHT, 0), size = PLATFORM)
         serverTicks(SETTLE_TICKS)
 
-        val origin = plotOrigin()
+        val origin = plotOriginOf(platform)
 
         furnish(origin)
         serverTicks(SETTLE_TICKS)
 
-        val furnished = shotOfTheSubLevel("sublevel_furnished")
+        val furnished = shotOfTheSubLevel(platform, "sublevel_furnished")
 
         // Before any of the block-by-block checks, because they read the server and this reads the
         // screen: a sub-level whose blocks are all present on the server and absent from the client
@@ -76,7 +76,7 @@ class SubLevelPhysicsTest {
                 "it itself. See $furnished",
         )
 
-        val built = contentsOfTheSubLevel(origin)
+        val built = contentsOfTheSubLevel(platform)
 
         // Checked before it moves, so a later failure means the flight broke it rather than that it
         // was never built. A belt that did not connect leaves no belt blocks at all.
@@ -105,7 +105,7 @@ class SubLevelPhysicsTest {
         // Where the floor actually is. Every test gets its own patch of world, so the stage's own
         // origin is the reference rather than y = 0.
         val floorY = at(0, 0, 0).y.toDouble()
-        val restingY = subLevelY()
+        val restingY = subLevelY(platform)
 
         assertTrue(
             restingY > floorY,
@@ -116,11 +116,13 @@ class SubLevelPhysicsTest {
         // Straight up. Sable takes the impulse in world space, and the sub-level's own mass decides
         // how far it goes -- which is why the assertion below is that it rose at all rather than that
         // it rose to a particular height.
-        runCommand("sable physics impulse @l linear 0 $IMPULSE 0")
+        // Named by UUID rather than by the `@l` selector, which means "the last sub-level" -- and
+        // the last one on a shared server is not necessarily this test's.
+        linearImpulse(platform, 0.0, IMPULSE.toDouble(), 0.0)
         serverTicks(RISE_TICKS)
 
-        val apexY = subLevelY()
-        val thrown = shotOfTheSubLevel("sublevel_thrown", moving = true)
+        val apexY = subLevelY(platform)
+        val thrown = shotOfTheSubLevel(platform, "sublevel_thrown", moving = true)
 
         // Drawn in the air, and not only at rest. A sub-level is re-posed every frame while it
         // moves, and its sections are re-collected against that pose; the picture is the only thing
@@ -143,8 +145,8 @@ class SubLevelPhysicsTest {
         // Long enough to come back down and stop bouncing.
         serverTicks(FALL_TICKS)
 
-        val landedY = subLevelY()
-        val landed = shotOfTheSubLevel("sublevel_landed")
+        val landedY = subLevelY(platform)
+        val landed = shotOfTheSubLevel(platform, "sublevel_landed")
 
         assertTrue(
             landedY < apexY - 1.0,
@@ -178,7 +180,7 @@ class SubLevelPhysicsTest {
                 landed,
         )
 
-        val after = contentsOfTheSubLevel(plotOrigin())
+        val after = contentsOfTheSubLevel(platform)
 
         // The whole point. Everything that rode along is still there, and the belt is still a belt
         // rather than a scattering of unconnected segments.
@@ -194,6 +196,11 @@ class SubLevelPhysicsTest {
             built.chestItems, after.chestItems,
             "The chest's contents changed over the flight: $built before, $after after",
         )
+
+        // And taken away again. The stage sweep clears the plot this test was given; a sub-level's
+        // blocks are twenty million blocks from it and are never swept, so without this the body is
+        // left behind and the physics pipeline goes on stepping it for the rest of the run.
+        clearAllSubLevels()
     }
 
     private fun middleOf(pos: BlockPos) = Vec3(pos.x + 0.5, pos.y + 0.5, pos.z + 0.5)
@@ -204,8 +211,16 @@ class SubLevelPhysicsTest {
      * The default is stone, and the floor beneath it is stone: the first run of this produced a
      * screenshot in which the platform was invisible against the ground it was standing on.
      */
-    private suspend fun Stage.spawnPlatform(at: BlockPos, size: Int) {
+    private suspend fun Stage.spawnPlatform(at: BlockPos, size: Int): String {
+        val before = subLevelIds().toSet()
+
         runCommand("execute positioned ${at.x} ${at.y} ${at.z} run sable spawn platform $size $MATERIAL")
+
+        // The one that appeared, by UUID. Every stage in a run shares one server, so "the last
+        // sub-level" is whichever test assembled most recently -- which is this one only while the
+        // client pool is 1. See SubLevels.kt.
+        return (subLevelIds().toSet() - before).singleOrNull()
+            ?: throw AssertionError("The spawn command did not make exactly one sub-level")
     }
 
     /**
@@ -215,13 +230,7 @@ class SubLevelPhysicsTest {
      * addresses them locally and offsets by the plot's centre; everything here works in world
      * coordinates, so it asks for that offset once and adds it.
      */
-    private suspend fun Stage.plotOrigin(): Origin = server {
-        val sub = dev.ryanhcode.sable.api.sublevel.SubLevelContainer.getContainer(serverLevel)!!
-            .getAllSubLevels().last()
-        val centre = sub.getPlot().getCenterBlock()
 
-        Origin(centre.x, centre.y, centre.z)
-    }
 
     /** Builds the machine and the furniture inside the sub-level. */
     private suspend fun Stage.furnish(origin: Origin) {
@@ -278,14 +287,7 @@ class SubLevelPhysicsTest {
     }
 
     /** Where the sub-level's body is, as the physics has it. */
-    private suspend fun Stage.subLevelPos(): Pos = server {
-        val at = dev.ryanhcode.sable.api.sublevel.SubLevelContainer.getContainer(serverLevel)!!
-            .getAllSubLevels().last().logicalPose().position()
-
-        Pos(at.x(), at.y(), at.z())
-    }
-
-    private suspend fun Stage.subLevelY(): Double = subLevelPos().y
+    private suspend fun Stage.subLevelY(id: String): Double = poseOf(id).y
 
     /**
      * Points the camera at the sub-level wherever it currently is, and takes the picture.
@@ -293,8 +295,12 @@ class SubLevelPhysicsTest {
      * Following rather than fixed, because the interesting frames are the ones where it has moved.
      * A fixed camera caught the first throw as an empty field with a wireframe against the clouds.
      */
-    private suspend fun Stage.shotOfTheSubLevel(name: String, moving: Boolean = false): String {
-        aimAtTheSubLevel()
+    private suspend fun Stage.shotOfTheSubLevel(
+        id: String,
+        name: String,
+        moving: Boolean = false,
+    ): String {
+        aimAtTheSubLevel(id)
 
         // Long enough for the sub-level's sections to be built and drawn from this angle. Under
         // Sodium they are built by a dispatcher of Sable's own, which is driven once a frame.
@@ -304,14 +310,14 @@ class SubLevelPhysicsTest {
         // came back as an empty sky until this stopped waiting.
         if (!moving) {
             serverTicks(WATCH_TICKS)
-            aimAtTheSubLevel()
+            aimAtTheSubLevel(id)
         }
 
         return shotFile(name)
     }
 
-    private suspend fun Stage.aimAtTheSubLevel() {
-        val at = subLevelPos()
+    private suspend fun Stage.aimAtTheSubLevel(id: String) {
+        val at = poseOf(id)
 
         spectateAt(
             Vec3(at.x + VIEW_BACK, at.y + VIEW_UP, at.z + VIEW_BACK),
@@ -356,7 +362,7 @@ class SubLevelPhysicsTest {
     }
 
     /** What is actually inside the sub-level, read block by block. */
-    private suspend fun Stage.contentsOfTheSubLevel(origin: Origin): Contents = server(origin) { at ->
+    private suspend fun Stage.contentsOfTheSubLevel(id: String): Contents = server(id) { uuid ->
         val level = serverLevel
         var belts = 0
         var doorHalves = 0
@@ -369,9 +375,7 @@ class SubLevelPhysicsTest {
 
         // The sub-level moves, so its blocks are not where they were put. They are found by sweeping
         // the plot the sub-level owns, which does not move -- the body moves, the plot is storage.
-        val sub = dev.ryanhcode.sable.api.sublevel.SubLevelContainer.getContainer(level)!!
-            .getAllSubLevels().last()
-        val box = sub.getPlot().getBoundingBox().toAABB()
+        val box = subLevelNamed(level, uuid).plot.boundingBox.toAABB()
 
         for (pos in net.minecraft.core.BlockPos.betweenClosed(
             net.minecraft.core.BlockPos.containing(box.minX, box.minY, box.minZ),
@@ -407,12 +411,6 @@ class SubLevelPhysicsTest {
 
         Contents(belts, motor, doorHalves, bedHalves, chest, chestItems, beltSpeed, platform)
     }
-
-    @Serializable
-    data class Origin(val x: Int, val y: Int, val z: Int)
-
-    @Serializable
-    data class Pos(val x: Double, val y: Double, val z: Double)
 
     @Serializable
     data class Contents(
