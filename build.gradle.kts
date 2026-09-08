@@ -23,8 +23,38 @@ tasks.withType<KotlinCompile>().configureEach {
     compilerOptions.jvmTarget = org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_25
 }
 
+/**
+ * Whether the Create Simulated family is under test alongside Create itself.
+ *
+ * On unless `-Psimulated=false`. Off, the mods are not on the classpath at all and the tests that
+ * need them are not compiled or run -- which is what makes the switch worth having: those mods pull
+ * in Sable's physics and Veil's renderer, and a run that is only asking about Create should not have
+ * to load them or explain their failures.
+ */
+val withSimulated = providers.gradleProperty("simulated").orNull != "false"
+
+// Kept beside the switch rather than in a catalogue, because they track the builds sitting next to
+// this one and move whenever those are republished.
+val SIMULATED_VERSION = "1.3.2"
+val SABLE_VERSION = "2.0.5"
+val SABLE_COMPANION_VERSION = "1.6.0"
+val VEIL_VERSION = "4.4.1"
+
 tasks.withType<Test>().configureEach {
     useJUnitPlatform()
+
+    if (withSimulated) {
+        // Sodium and Sable cannot be in one game. Sable declares `incompatible` with Sodium on 26.2
+        // -- "Sable's Sodium integration is not available on this version" -- and FML refuses the
+        // load outright, so the dedicated server exits before the cluster forms and every test in the
+        // run fails at parameter resolution rather than on its own terms.
+        //
+        // So the switch trades one for the other: the Simulated family is in and Sodium's tests are
+        // out. `-Psimulated=false` gives back the original suite, Sodium included.
+        exclude("**/compat/SodiumTest*")
+    } else {
+        exclude("**/simulated/**")
+    }
 
     testLogging {
         events("passed", "skipped", "failed")
@@ -174,6 +204,19 @@ repositories {
     maven("https://raw.githubusercontent.com/Fuzss/modresources/main/maven")
 }
 
+// Registrate comes from Create's jar-in-jar at runtime, so it must not also come from the classpath.
+//
+// Create nests Registrate inside its own jar and FML extracts it for the test run; Gradle separately
+// resolves the same artifact as a transitive dependency. Both land in front of the JVM, both are
+// automatic modules, and two modules exporting `com.tterrag.registrate` is a launch failure rather
+// than a warning -- "Modules Registrate and Registrate.MC26._2._86a1c38 export package ... to module
+// journeymap", before a single test runs.
+//
+// Compilation still sees it: this drops it only from the runtime classpath, where FML supplies it.
+configurations.testRuntimeClasspath {
+    exclude(group = "com.tterrag.registrate")
+}
+
 // The coverage agent, as a jar rather than as something on a classpath: it is handed to the games
 // on their command lines, and they are separate JVMs that this build only starts.
 val coverageAgent: Configuration by configurations.creating
@@ -197,7 +240,9 @@ dependencies {
     // configuration". So it goes everywhere the tests go -- the game client, the dedicated server,
     // and this process -- and what keeps it off the two that do not draw is Sodium's own
     // `@Mod(dist = Dist.CLIENT)`, which is FML's business rather than the build's.
-    implementation("maven.modrinth:AANobbMI:gQDMcWww")
+    if (!withSimulated) {
+        implementation("maven.modrinth:AANobbMI:gQDMcWww")
+    }
 
     // JourneyMap, on the same terms and for the same reason: Create has a `@JourneyMapPlugin` that
     // draws the railway network over JourneyMap's fullscreen map, and that plugin is unreachable
@@ -207,6 +252,24 @@ dependencies {
 
     implementation("dev.vibeported.mc.e2e:driver")
     implementation(libs.kotlinforforge)
+
+    // The Create Simulated family, from the build next door by way of mavenLocal. Create itself is
+    // substituted out of the included build, so these load against the same Create the rest of the
+    // suite tests rather than against the version they were compiled with.
+    //
+    // The NeoForge modules only. Each mod's `common` jar holds the same classes without the loader
+    // entrypoint, and having both on one classpath gives FML two candidates for every mod id.
+    if (withSimulated) {
+        // The four mods, and deliberately nothing under them. Sable nests Veil, sable-companion and
+        // its Rapier natives inside its own jar, and Create nests Registrate inside its -- so naming
+        // any of those here would put the same code on the classpath twice, once loose and once
+        // extracted from a jar-in-jar. The JVM refuses to start a test where two modules export one
+        // package, and it refuses before a single test runs.
+        implementation("dev.simulated_team.simulated:simulated-neoforge-26.2:$SIMULATED_VERSION")
+        implementation("dev.eriksonn.aeronautics:aeronautics-neoforge-26.2:$SIMULATED_VERSION")
+        implementation("dev.ryanhcode.offroad:offroad-neoforge-26.2:$SIMULATED_VERSION")
+        implementation("dev.ryanhcode.sable:sable-neoforge-26.2:$SABLE_VERSION")
+    }
 
     testImplementation("dev.vibeported.mc.e2e:junit")
     testImplementation(libs.junit.jupiter)
@@ -239,6 +302,14 @@ neoForge {
         // the extra minute buys more of the timing-sensitive failures than it is worth. The floor is
         // not the pool anyway -- TrainCircuitTest alone takes three and a half minutes, and its
         // phases are a sequence.
-        clientPool = 6
+        clientPool = 1
+    }
+}
+
+
+tasks.register("printTestCp") {
+    val cp = configurations.named("testRuntimeClasspath")
+    doLast {
+        cp.get().files.map { it.name }.sorted().forEach { println(it) }
     }
 }
