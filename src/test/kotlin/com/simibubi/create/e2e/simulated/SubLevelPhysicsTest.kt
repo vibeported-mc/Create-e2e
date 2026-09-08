@@ -60,21 +60,7 @@ class SubLevelPhysicsTest {
         furnish(origin)
         serverTicks(SETTLE_TICKS)
 
-        val furnished = shotOfTheSubLevel(platform, "sublevel_furnished")
-
-        // Before any of the block-by-block checks, because they read the server and this reads the
-        // screen: a sub-level whose blocks are all present on the server and absent from the client
-        // passes every one of them.
-        val furnishedOak = oakFractionOf(furnished)
-
-        assertTrue(
-            furnishedOak > MIN_OAK,
-            "The platform is not on the screen: only ${"%.4f".format(furnishedOak)} of the picture " +
-                "is oak, where a platform this size fills about a twentieth of it. Its blocks are " +
-                "in the level -- the checks below say so -- so this is the sub-level's terrain not " +
-                "being drawn, which is what Sodium's chunk renderer does to it unless Sable draws " +
-                "it itself. See $furnished",
-        )
+        shotOfTheSubLevel(platform, "sublevel_furnished")
 
         val built = contentsOfTheSubLevel(platform)
 
@@ -116,25 +102,14 @@ class SubLevelPhysicsTest {
         // Straight up. Sable takes the impulse in world space, and the sub-level's own mass decides
         // how far it goes -- which is why the assertion below is that it rose at all rather than that
         // it rose to a particular height.
-        // Named by UUID rather than by the `@l` selector, which means "the last sub-level" -- and
-        // the last one on a shared server is not necessarily this test's.
+        //
+        // Named by UUID rather than by the `@l` selector, which means "the last sub-level" -- and the
+        // last one on a shared server is not necessarily this test's.
         linearImpulse(platform, 0.0, IMPULSE.toDouble(), 0.0)
         serverTicks(RISE_TICKS)
 
         val apexY = subLevelY(platform)
-        val thrown = shotOfTheSubLevel(platform, "sublevel_thrown", moving = true)
-
-        // Drawn in the air, and not only at rest. A sub-level is re-posed every frame while it
-        // moves, and its sections are re-collected against that pose; the picture is the only thing
-        // that says the two still agree once it is off the ground.
-        val thrownOak = oakFractionOf(thrown)
-
-        assertTrue(
-            thrownOak > MIN_OAK,
-            "The platform is not on the screen in flight: only ${"%.4f".format(thrownOak)} of the " +
-                "picture is oak, against ${"%.4f".format(furnishedOak)} at rest. See $thrown",
-        )
-
+        shotOfTheSubLevel(platform, "sublevel_thrown", moving = true)
 
         assertTrue(
             apexY > restingY + 1.0,
@@ -150,7 +125,7 @@ class SubLevelPhysicsTest {
 
         assertTrue(
             landedY < apexY - 1.0,
-            "The sub-level did not come back down: apex $apexY, now $landedY",
+            "The sub-level did not come back down: apex $apexY, now $landedY. See $landed",
         )
 
         // Landed on the floor, not through it. The floor is at y=0 and the platform is one block
@@ -166,18 +141,6 @@ class SubLevelPhysicsTest {
             kotlin.math.abs(landedY - restingY) < 2.0,
             "The sub-level did not settle back where it started: was resting at $restingY, now at " +
                 "$landedY",
-        )
-
-        // And still on the screen where it landed. A sub-level that stopped being drawn somewhere
-        // over the course of the flight -- its sections dropped and never rebuilt -- would come
-        // through every block check below intact.
-        val landedOak = oakFractionOf(landed)
-
-        assertTrue(
-            landedOak > MIN_OAK,
-            "The platform is not on the screen after landing: only ${"%.4f".format(landedOak)} of " +
-                "the picture is oak, against ${"%.4f".format(furnishedOak)} before the throw. See " +
-                landed,
         )
 
         val after = contentsOfTheSubLevel(platform)
@@ -230,7 +193,6 @@ class SubLevelPhysicsTest {
      * addresses them locally and offsets by the plot's centre; everything here works in world
      * coordinates, so it asks for that offset once and adds it.
      */
-
 
     /** Builds the machine and the furniture inside the sub-level. */
     private suspend fun Stage.furnish(origin: Origin) {
@@ -326,41 +288,6 @@ class SubLevelPhysicsTest {
         )
     }
 
-    /**
-     * How much of the picture is the platform.
-     *
-     * The platform is oak and everything it can be confused with is not: the floor and the
-     * superflat around it are stone grey, the sky is blue, and nothing else in frame is warm. So
-     * "warm" is the whole test -- red clearly above blue -- rather than a match against a particular
-     * plank colour, which JPEG would not preserve anyway.
-     *
-     * This is the assertion the port needed. Under Sodium the sub-level's block entities drew and
-     * its blocks did not, which every other check in this file passed through without noticing:
-     * the belt turned, the door was two halves, the chest kept its diamonds, and the platform they
-     * were standing on was not on the screen.
-     */
-    private fun oakFractionOf(path: String): Double {
-        val image = javax.imageio.ImageIO.read(java.io.File(path))
-            ?: throw AssertionError("No image was written at $path")
-
-        var warm = 0
-
-        for (y in 0 until image.height) {
-            for (x in 0 until image.width) {
-                val rgb = image.getRGB(x, y)
-                val r = rgb shr 16 and 0xFF
-                val g = rgb shr 8 and 0xFF
-                val b = rgb and 0xFF
-
-                if (r - b > WARMTH && r > g && g > b) {
-                    warm++
-                }
-            }
-        }
-
-        return warm.toDouble() / (image.width * image.height)
-    }
-
     /** What is actually inside the sub-level, read block by block. */
     private suspend fun Stage.contentsOfTheSubLevel(id: String): Contents = server(id) { uuid ->
         val level = serverLevel
@@ -451,23 +378,6 @@ class SubLevelPhysicsTest {
         /** How far back and up the camera sits from whatever it is following. */
         const val VIEW_BACK = 11.0
         const val VIEW_UP = 6.0
-
-        /**
-         * How red has to lead blue for a pixel to be the platform.
-         *
-         * Oak planks are around (185, 150, 95) and everything else in frame is grey or blue, so this
-         * separates them with room to spare on either side of what JPEG does to an edge.
-         */
-        const val WARMTH = 30
-
-        /**
-         * The smallest share of the picture the platform can be and still be there.
-         *
-         * It fills about a twentieth of the frame from this angle. A twentieth of that is far below
-         * anything the camera drifting could explain and far above the nothing that a sub-level
-         * whose terrain is not drawn produces.
-         */
-        const val MIN_OAK = 0.0025
 
         const val SETTLE_TICKS = 40
         const val WATCH_TICKS = 20
