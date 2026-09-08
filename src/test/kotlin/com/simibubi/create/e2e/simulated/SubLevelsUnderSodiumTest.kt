@@ -24,24 +24,21 @@ import org.junit.jupiter.api.Test
  *
  * Sable used to declare itself outright incompatible with Sodium, and on 26.2 that was a guess rather
  * than a measurement. It made sense once: Sodium replaced the terrain path wholesale, so sub-levels
- * needed hooks into `SodiumWorldRenderer` to be drawn at all, and those hooks are written against a
+ * needed hooks into `SodiumWorldRenderer` to be drawn at all, and those hooks were written against a
  * rendering API 26.2 deleted -- `RenderSystem.getShader()`, `setupRenderState()`, a
  * `renderSectionLayer` that took a shader -- so the port excluded them.
  *
- * What changed is on Sodium's side. It now overwrites `LevelRenderer.prepareChunkRenders` and returns
- * vanilla's own `ChunkSectionsToRender`, rather than bypassing the method. Sable's vanilla sub-level
- * renderer appends its draws with a `@ModifyReturnValue` on exactly that method, so they are still
- * appended, and `renderGroup` still draws them along with Sodium's own.
+ * They are back, rewritten, and `SABLE-26.2-OPEN-QUESTIONS.md` records what was in the way. This
+ * covers the half of it that is not a picture: that the client knows of the sub-level, that its
+ * sections are *compiled*, and that Sodium is really the renderer while all that is true. Sections
+ * are compiled under Sodium by a `SectionRenderDispatcher` of Sable's own, because the one Sodium
+ * leaves in the level renderer is a stub whose every method is a no-op.
  *
- * <b>What this does not prove.</b> It asserts that a sub-level's sections are *compiled* and that the
- * client is drawing frames -- not that the sections reach the screen. They do not: under Sodium a
- * sub-level's block entities appear and the blocks they stand on do not, because the draws are
- * contributed to a `ChunkSectionsToRender` that Sodium builds and never renders. This passed
- * throughout that, which is worth remembering about it.
- *
- * The remaining work is in Sable, and `SABLE-26.2-OPEN-QUESTIONS.md` records where it stands. Once
- * sub-level terrain draws under Sodium, the assertion to add here is a pixel one -- the platform in
- * `SubLevelPhysicsTest` is oak against a stone floor precisely so that it can be told apart.
+ * <b>What this does not prove.</b> That the sections reach the screen. They did not, for the whole
+ * time this test existed and passed: the draws were contributed to a `ChunkSectionsToRender` that
+ * Sodium cancels the rendering of, so a sub-level's block entities appeared and the blocks they stood
+ * on did not, and nothing here noticed. The assertion that does notice is in `SubLevelPhysicsTest`,
+ * which counts oak pixels against a stone floor.
  */
 @DrivesMinecraft
 class SubLevelsUnderSodiumTest {

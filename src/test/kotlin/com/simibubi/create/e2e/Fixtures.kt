@@ -380,6 +380,15 @@ internal suspend fun Stage.shot(client: String, name: String) {
 }
 
 /**
+ * The same picture, and where it was written.
+ *
+ * For the tests that go on to read the pixels back. The file is on this machine -- the driver writes
+ * it under the capture directory the build names -- so the path is one an ordinary [java.io.File]
+ * can open.
+ */
+internal suspend fun Stage.shotFile(name: String): String = screenshot(watcher, name)
+
+/**
  * The two fluids these scenes move.
  *
  * An enum rather than a `Fluid`: a `Fluid` is a registry object and cannot cross a wire, an enum

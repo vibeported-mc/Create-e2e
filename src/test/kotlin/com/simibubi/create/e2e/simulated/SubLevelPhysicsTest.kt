@@ -5,6 +5,7 @@ import com.simibubi.create.e2e.runCommand
 import com.simibubi.create.e2e.serverTicks
 import com.simibubi.create.e2e.setBlock
 import com.simibubi.create.e2e.shot
+import com.simibubi.create.e2e.shotFile
 import com.simibubi.create.e2e.spectateAt
 import com.simibubi.create.e2e.watcher
 import dev.vibeported.mc.driver.ClusterScope
@@ -59,7 +60,21 @@ class SubLevelPhysicsTest {
         furnish(origin)
         serverTicks(SETTLE_TICKS)
 
-        shotOfTheSubLevel("sublevel_furnished")
+        val furnished = shotOfTheSubLevel("sublevel_furnished")
+
+        // Before any of the block-by-block checks, because they read the server and this reads the
+        // screen: a sub-level whose blocks are all present on the server and absent from the client
+        // passes every one of them.
+        val furnishedOak = oakFractionOf(furnished)
+
+        assertTrue(
+            furnishedOak > MIN_OAK,
+            "The platform is not on the screen: only ${"%.4f".format(furnishedOak)} of the picture " +
+                "is oak, where a platform this size fills about a twentieth of it. Its blocks are " +
+                "in the level -- the checks below say so -- so this is the sub-level's terrain not " +
+                "being drawn, which is what Sodium's chunk renderer does to it unless Sable draws " +
+                "it itself. See $furnished",
+        )
 
         val built = contentsOfTheSubLevel(origin)
 
@@ -105,7 +120,19 @@ class SubLevelPhysicsTest {
         serverTicks(RISE_TICKS)
 
         val apexY = subLevelY()
-        shotOfTheSubLevel("sublevel_thrown")
+        val thrown = shotOfTheSubLevel("sublevel_thrown", moving = true)
+
+        // Drawn in the air, and not only at rest. A sub-level is re-posed every frame while it
+        // moves, and its sections are re-collected against that pose; the picture is the only thing
+        // that says the two still agree once it is off the ground.
+        val thrownOak = oakFractionOf(thrown)
+
+        assertTrue(
+            thrownOak > MIN_OAK,
+            "The platform is not on the screen in flight: only ${"%.4f".format(thrownOak)} of the " +
+                "picture is oak, against ${"%.4f".format(furnishedOak)} at rest. See $thrown",
+        )
+
 
         assertTrue(
             apexY > restingY + 1.0,
@@ -117,7 +144,7 @@ class SubLevelPhysicsTest {
         serverTicks(FALL_TICKS)
 
         val landedY = subLevelY()
-        shotOfTheSubLevel("sublevel_landed")
+        val landed = shotOfTheSubLevel("sublevel_landed")
 
         assertTrue(
             landedY < apexY - 1.0,
@@ -137,6 +164,18 @@ class SubLevelPhysicsTest {
             kotlin.math.abs(landedY - restingY) < 2.0,
             "The sub-level did not settle back where it started: was resting at $restingY, now at " +
                 "$landedY",
+        )
+
+        // And still on the screen where it landed. A sub-level that stopped being drawn somewhere
+        // over the course of the flight -- its sections dropped and never rebuilt -- would come
+        // through every block check below intact.
+        val landedOak = oakFractionOf(landed)
+
+        assertTrue(
+            landedOak > MIN_OAK,
+            "The platform is not on the screen after landing: only ${"%.4f".format(landedOak)} of " +
+                "the picture is oak, against ${"%.4f".format(furnishedOak)} before the throw. See " +
+                landed,
         )
 
         val after = contentsOfTheSubLevel(plotOrigin())
@@ -254,13 +293,66 @@ class SubLevelPhysicsTest {
      * Following rather than fixed, because the interesting frames are the ones where it has moved.
      * A fixed camera caught the first throw as an empty field with a wireframe against the clouds.
      */
-    private suspend fun Stage.shotOfTheSubLevel(name: String) {
-        val at = subLevelPos()
-        val eye = Vec3(at.x + VIEW_BACK, at.y + VIEW_UP, at.z + VIEW_BACK)
+    private suspend fun Stage.shotOfTheSubLevel(name: String, moving: Boolean = false): String {
+        aimAtTheSubLevel()
 
-        spectateAt(eye, Vec3(at.x, at.y, at.z))
-        serverTicks(WATCH_TICKS)
-        shot(name)
+        // Long enough for the sub-level's sections to be built and drawn from this angle. Under
+        // Sodium they are built by a dispatcher of Sable's own, which is driven once a frame.
+        //
+        // Skipped while it is in flight: by then the sections are long built, and twenty ticks is
+        // enough of a ballistic arc to take it out of frame. The picture of the top of the throw
+        // came back as an empty sky until this stopped waiting.
+        if (!moving) {
+            serverTicks(WATCH_TICKS)
+            aimAtTheSubLevel()
+        }
+
+        return shotFile(name)
+    }
+
+    private suspend fun Stage.aimAtTheSubLevel() {
+        val at = subLevelPos()
+
+        spectateAt(
+            Vec3(at.x + VIEW_BACK, at.y + VIEW_UP, at.z + VIEW_BACK),
+            Vec3(at.x, at.y, at.z),
+            settle = AIM_TICKS,
+        )
+    }
+
+    /**
+     * How much of the picture is the platform.
+     *
+     * The platform is oak and everything it can be confused with is not: the floor and the
+     * superflat around it are stone grey, the sky is blue, and nothing else in frame is warm. So
+     * "warm" is the whole test -- red clearly above blue -- rather than a match against a particular
+     * plank colour, which JPEG would not preserve anyway.
+     *
+     * This is the assertion the port needed. Under Sodium the sub-level's block entities drew and
+     * its blocks did not, which every other check in this file passed through without noticing:
+     * the belt turned, the door was two halves, the chest kept its diamonds, and the platform they
+     * were standing on was not on the screen.
+     */
+    private fun oakFractionOf(path: String): Double {
+        val image = javax.imageio.ImageIO.read(java.io.File(path))
+            ?: throw AssertionError("No image was written at $path")
+
+        var warm = 0
+
+        for (y in 0 until image.height) {
+            for (x in 0 until image.width) {
+                val rgb = image.getRGB(x, y)
+                val r = rgb shr 16 and 0xFF
+                val g = rgb shr 8 and 0xFF
+                val b = rgb and 0xFF
+
+                if (r - b > WARMTH && r > g && g > b) {
+                    warm++
+                }
+            }
+        }
+
+        return warm.toDouble() / (image.width * image.height)
     }
 
     /** What is actually inside the sub-level, read block by block. */
@@ -344,11 +436,16 @@ class SubLevelPhysicsTest {
          * Straight up, and hard enough to matter.
          *
          * An impulse is a change in momentum, so what it buys depends on the body's mass, and the
-         * useful range turned out to be narrow: 900 moved a nine-by-nine slab of stone by five
-         * hundredths of a block, and 60000 sent it past y = 1800 and still climbing. This lifts it a
-         * few blocks, which is what the test is about.
+         * useful range is narrow. It is calibrated against *this* platform -- four across and made
+         * of oak -- and not against the nine-by-nine of stone an earlier version threw: at the mass
+         * of that one, 900 moved it five hundredths of a block. At the mass of this one, 4000 sent
+         * it 130 blocks up, where it stopped dead and stayed, to the same three decimal places on
+         * two runs. Whatever that is, it is not a throw, and the test after it is not measuring one.
+         *
+         * This lifts it a few blocks and lets it come back, which is what the test is about, and
+         * keeps it in frame while it does.
          */
-        const val IMPULSE = 4000
+        const val IMPULSE = 400
 
         /** Oak against a stone floor, so the platform is visible in the pictures. */
         const val MATERIAL = "minecraft:oak_planks"
@@ -357,8 +454,28 @@ class SubLevelPhysicsTest {
         const val VIEW_BACK = 11.0
         const val VIEW_UP = 6.0
 
+        /**
+         * How red has to lead blue for a pixel to be the platform.
+         *
+         * Oak planks are around (185, 150, 95) and everything else in frame is grey or blue, so this
+         * separates them with room to spare on either side of what JPEG does to an edge.
+         */
+        const val WARMTH = 30
+
+        /**
+         * The smallest share of the picture the platform can be and still be there.
+         *
+         * It fills about a twentieth of the frame from this angle. A twentieth of that is far below
+         * anything the camera drifting could explain and far above the nothing that a sub-level
+         * whose terrain is not drawn produces.
+         */
+        const val MIN_OAK = 0.0025
+
         const val SETTLE_TICKS = 40
         const val WATCH_TICKS = 20
+
+        /** Camera settle for a re-aim, which is a turn on the spot rather than a teleport. */
+        const val AIM_TICKS = 10
         const val RISE_TICKS = 20
         const val FALL_TICKS = 200
     }
