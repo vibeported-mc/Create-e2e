@@ -61,6 +61,12 @@ internal data class ParityResult(
  * assembling moves them roughly twenty million blocks away, and this hands back the position that
  * actually addresses them.
  *
+ * **What [build] lays must be one connected structure.** Assembly makes a body out of blocks that
+ * touch each other, so a rig in two pieces -- two machines on their own little pads with air between
+ * them -- becomes one sub-level and one pile of blocks left behind in the world. The half that was
+ * left behind then reads as air, and it is visible in the pictures as a second rig sitting on the
+ * ground next to the one that flew. Lay a continuous floor under everything.
+ *
  * [reach] is how far the rig extends from its origin in each direction. It decides the box that gets
  * assembled, so a rig with a part outside it is quietly left behind on the ground.
  *
