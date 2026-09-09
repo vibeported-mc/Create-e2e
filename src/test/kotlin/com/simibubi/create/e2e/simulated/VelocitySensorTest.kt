@@ -125,7 +125,7 @@ class VelocitySensorTest {
 
             return Reading(adjustedVelocityAt(sensor), velocityOf(body).linearSpeed)
         } finally {
-            clearAllSubLevels()
+            removeSubLevel(body)
         }
     }
 

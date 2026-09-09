@@ -147,7 +147,7 @@ internal suspend fun Stage.bothWays(
 
         return ParityResult(ground, sub, subLevel, picture, pictureAgain)
     } finally {
-        clearAllSubLevels()
+        removeSubLevel(subLevel)
     }
 }
 

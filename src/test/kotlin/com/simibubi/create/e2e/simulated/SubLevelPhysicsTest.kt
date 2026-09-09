@@ -163,7 +163,7 @@ class SubLevelPhysicsTest {
         // And taken away again. The stage sweep clears the plot this test was given; a sub-level's
         // blocks are twenty million blocks from it and are never swept, so without this the body is
         // left behind and the physics pipeline goes on stepping it for the rest of the run.
-        clearAllSubLevels()
+        removeSubLevel(platform)
     }
 
     private fun middleOf(pos: BlockPos) = Vec3(pos.x + 0.5, pos.y + 0.5, pos.z + 0.5)
@@ -174,17 +174,13 @@ class SubLevelPhysicsTest {
      * The default is stone, and the floor beneath it is stone: the first run of this produced a
      * screenshot in which the platform was invisible against the ground it was standing on.
      */
-    private suspend fun Stage.spawnPlatform(at: BlockPos, size: Int): String {
-        val before = subLevelIds().toSet()
-
-        runCommand("execute positioned ${at.x} ${at.y} ${at.z} run sable spawn platform $size $MATERIAL")
-
-        // The one that appeared, by UUID. Every stage in a run shares one server, so "the last
-        // sub-level" is whichever test assembled most recently -- which is this one only while the
-        // client pool is 1. See SubLevels.kt.
-        return (subLevelIds().toSet() - before).singleOrNull()
-            ?: throw AssertionError("The spawn command did not make exactly one sub-level")
-    }
+    private suspend fun Stage.spawnPlatform(at: BlockPos, size: Int): String =
+        // The one standing where the platform was spawned, rather than the difference between two
+        // snapshots of every sub-level on the server. Tests share the server and several run at once,
+        // so a snapshot taken here sees other tests' bodies coming and going. See SubLevels.kt.
+        theBodyAt(at) {
+            runCommand("execute positioned ${at.x} ${at.y} ${at.z} run sable spawn platform $size $MATERIAL")
+        }
 
     /**
      * Where the sub-level's own (0, 0, 0) sits in the world.

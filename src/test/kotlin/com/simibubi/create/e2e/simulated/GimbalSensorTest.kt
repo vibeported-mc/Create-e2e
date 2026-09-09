@@ -98,7 +98,7 @@ class GimbalSensorTest {
                     "is emitting any redstone. The tilt is supposed to come out as a signal",
             )
         } finally {
-            clearAllSubLevels()
+            removeSubLevel(body)
         }
     }
 

@@ -1,6 +1,7 @@
 package com.simibubi.create.e2e.simulated
 
 import com.simibubi.create.e2e.runCommand
+import com.simibubi.create.e2e.serverTicks
 import dev.vibeported.mc.driver.Stage
 import dev.vibeported.mc.driver.server
 import kotlinx.serialization.Serializable
@@ -61,10 +62,24 @@ data class Census(val ids: List<String>, val counts: List<Int>) {
         val at = ids.indexOf(id)
         return if (at < 0) 0 else counts[at]
     }
+
+    /** The tally as one line, for a failure message. */
+    fun describe(): String =
+        if (ids.isEmpty()) "nothing" else ids.indices.joinToString(", ") { ids[it] + " x" + counts[it] }
 }
 
 @Serializable
 internal data class Uuids(val values: List<String>)
+
+/** Sub-levels found near a point, nearest first, with how far away each one is. */
+@Serializable
+internal data class Nearby(val values: List<String>, val distances: List<Double>) {
+    fun nearest(): String = values.first()
+
+    /** Every one of them and how far off it was, for a failure message. */
+    fun describe(): String =
+        values.indices.joinToString(", ") { values[it] + " at " + "%.1f".format(distances[it]) }
+}
 
 /**
  * Assembles every block in the box into one sub-level, and says which one it made.
@@ -73,10 +88,13 @@ internal data class Uuids(val values: List<String>)
  * makes it the cheapest way to turn a rig a test has just built into a physics body. The box is
  * inclusive at both ends.
  */
-internal suspend fun Stage.assembleArea(from: BlockPos, to: BlockPos): String =
-    whicheverAppeared {
+internal suspend fun Stage.assembleArea(from: BlockPos, to: BlockPos): String {
+    val centre = BlockPos((from.x + to.x) / 2, (from.y + to.y) / 2, (from.z + to.z) / 2)
+
+    return theBodyAt(centre) {
         runCommand("sable assemble area ${from.x} ${from.y} ${from.z} ${to.x} ${to.y} ${to.z}")
     }
+}
 
 /**
  * Assembles whatever is connected to [seed], and says which sub-level it made.
@@ -85,7 +103,7 @@ internal suspend fun Stage.assembleArea(from: BlockPos, to: BlockPos): String =
  * structure, so what it picks up is a claim in itself rather than a box the test drew.
  */
 internal suspend fun Stage.assembleConnected(seed: BlockPos, capacity: Int = 2048): String =
-    whicheverAppeared {
+    theBodyAt(seed) {
         runCommand("sable assemble connected ${seed.x} ${seed.y} ${seed.z} $capacity")
     }
 
@@ -96,7 +114,7 @@ internal suspend fun Stage.assembleConnected(seed: BlockPos, capacity: Int = 204
  * click. The lever is a way of reaching this method and not a thing under test here.
  */
 internal suspend fun Stage.assembleWith(assembler: BlockPos): String =
-    whicheverAppeared {
+    theBodyAt(assembler) {
         server(assembler) { at ->
             val be = serverLevel.getBlockEntity(at)
 
@@ -118,33 +136,65 @@ internal suspend fun Stage.subLevelIds(): List<String> = server {
 internal suspend fun Stage.subLevelCount(): Int = subLevelIds().size
 
 /**
- * Runs [make] and returns the UUID of the sub-level that appeared.
+ * Runs [make] and returns the UUID of the sub-level now standing at [centre].
  *
- * Fails loudly when none appeared, or when more than one did -- a test that thinks it made one body
- * and made two will otherwise assert against an arbitrary half of its rig. Where two really are
- * expected (a raft sawn in half), take the difference with [subLevelIds] directly.
+ * By position rather than by diffing the set of sub-levels before and after. The diff looked like the
+ * obvious way to do this and is not reliable: a sub-level's plot is an ordinary region that loads and
+ * unloads, and `getAllSubLevels` reports what is loaded, so a body from an earlier test drops out of
+ * the list and comes back into it as its plot cycles. A diff taken across that reads the reappearance
+ * as a brand new body -- which showed up as tests failing with two bodies holding identical rigs, and
+ * only when another test had run first.
+ *
+ * Where a body is does not have that problem. `SubLevelAssemblyHelper.assembleBlocks` sets the new
+ * body's pose to the world position it was assembled from, so the one that belongs to this call is
+ * the one standing where the rig was.
  */
-private suspend fun Stage.whicheverAppeared(make: suspend () -> Unit): String {
-    val before = subLevelIds().toSet()
+internal suspend fun Stage.theBodyAt(centre: BlockPos, make: suspend () -> Unit): String {
     make()
-    val after = subLevelIds()
-    val made = after.filterNot(before::contains)
+    serverTicks(SETTLE_AFTER_ASSEMBLY)
 
-    if (made.size == 1) {
-        return made.single()
+    val here = subLevelsNear(centre, NEARBY)
+
+    if (here.values.isEmpty()) {
+        throw AssertionError(
+            "No sub-level was assembled at $centre. The assembly refused -- usually because the " +
+                "blocks named are not all there, or because they are already part of a body",
+        )
     }
 
-    throw AssertionError(
-        if (made.isEmpty()) {
-            "No sub-level was made. There were ${before.size} before and ${after.size} after, so " +
-                "the assembly refused -- usually because the blocks named are not all there, or " +
-                "because they are already part of a body"
-        } else {
-            "Expected one sub-level and got ${made.size}: $made. If the rig really does split, take " +
-                "the difference with subLevelIds() and assert on both halves"
-        },
-    )
+    // The nearest, rather than insisting there is only one.
+    //
+    // A stage's patch of world is reused once the test that had it finishes, so a body another test
+    // failed to clean up can still be standing in it. Those are metres away at worst and the next
+    // stage along is two thousand blocks away, so "the closest body to where this rig was just
+    // assembled" picks this test's own with an enormous margin.
+    return here.nearest()
 }
+
+/** Every sub-level whose body is standing within [within] blocks of [centre], nearest first. */
+internal suspend fun Stage.subLevelsNear(centre: BlockPos, within: Double): Nearby =
+    server(centre, within) { at, reach ->
+        val container = dev.ryanhcode.sable.api.sublevel.SubLevelContainer.getContainer(serverLevel)
+            ?: return@server Nearby(emptyList(), emptyList())
+
+        val found = container.getAllSubLevels()
+            .map { it to it.logicalPose().position().distance(at.x + 0.5, at.y + 0.5, at.z + 0.5) }
+            .filter { it.second <= reach }
+            .sortedBy { it.second }
+
+        Nearby(found.map { it.first.uniqueId.toString() }, found.map { it.second })
+    }
+
+/** Long enough for the new body to be registered and posed. */
+private const val SETTLE_AFTER_ASSEMBLY = 5
+
+/**
+ * How far from where a rig was built its body may be and still be recognised as the one.
+ *
+ * A body is posed at its assembly anchor and then settles under gravity, so this has to allow for a
+ * short drop while staying far inside the 2048 blocks between one test's plot and the next.
+ */
+private const val NEARBY = 24.0
 
 /**
  * Where the sub-level [id] keeps its blocks.
@@ -247,19 +297,18 @@ internal suspend fun Stage.blocksIn(id: String): Census = server(id) { uuid ->
  *
  * Call it in a teardown, not between assertions in one test.
  */
-internal suspend fun Stage.clearAllSubLevels() {
-    server {
-        val container = dev.ryanhcode.sable.api.sublevel.SubLevelContainer.getContainer(serverLevel)
-            ?: return@server
-
-        for (subLevel in container.getAllSubLevels().toList()) {
-            container.removeSubLevel(
-                subLevel,
-                dev.ryanhcode.sable.sublevel.storage.SubLevelRemovalReason.REMOVED,
-            )
-        }
-    }
+internal suspend fun Stage.removeSubLevel(id: String) {
+    // One body, named by its own UUID.
+    //
+    // Not "every body": the tests share a server and run several at a time, so a teardown that
+    // cleared everything would delete the bodies of whatever else happened to be mid-flight. Sable's
+    // selector argument takes a UUID as well as an `@` selector, which is what makes this possible.
+    runCommand("sable remove $id")
+    serverTicks(REMOVAL_TICKS)
 }
+
+/** Enough ticks for the container to process the queued removal. */
+private const val REMOVAL_TICKS = 20
 
 /*
  * The two lookups every body above needs, as top-level functions.
