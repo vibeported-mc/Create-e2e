@@ -541,7 +541,17 @@ class TrainCircuitTest {
         standBeside()
 
         assertTrue(clickOnTrain("create:red_seat"), "Could not find the seat to sit on")
-        assertTrue(riding(), "Clicking the seat did not sit the player on the train")
+
+        // Sitting down is the server's decision and reaches the client as a passenger packet, so it
+        // is waited for rather than read on the next tick. What the driver sees goes in the message
+        // because the three ways this can go wrong are indistinguishable from "not riding" alone.
+        waitUntil(SEAT_PATIENCE) { riding() }
+
+        assertTrue(
+            riding(),
+            "Clicking the seat did not sit the player on the train. ${whatTheDriverSees()}. " +
+                "The server says ${whatTheServerSees()}",
+        )
 
         assertTrue(
             clickOnTrain("create:controls"),
@@ -629,11 +639,38 @@ class TrainCircuitTest {
      * moving so slowly that two blocks take longer than the patience allowed. What the train tells
      * its driver separates them, and the rest says which of the first two it was.
      */
+    /**
+     * Whether the server thinks the player got on, which is the half the client cannot answer.
+     *
+     * Sitting down is the server's to decide: the client's handler only sends
+     * `ContraptionInteractionPacket` and waits to be told. So "not riding" on the client covers two
+     * quite different faults -- the click never reached the server, or the server took it and the
+     * mounting did not come back -- and only the server can say which.
+     */
+    private suspend fun Stage.whatTheServerSees(): String = server(watcher) { name ->
+        val player = playerNamed(name)
+
+        "vehicle: " + (player.vehicle?.javaClass?.simpleName ?: "none") +
+            ", which is entity " + (player.vehicle?.id ?: -1) +
+            ", the player is at " + player.position() +
+            ", in " + player.gameMode.gameModeForPlayer
+    }
+
     private suspend fun Stage.whatTheDriverSees(): String = client(watcher) {
         val train = trainEntity()
 
+        // The seats too, because a click that reaches the right block and still does nothing is most
+        // likely one the contraption does not think is a seat: `handlePlayerInteraction` looks the
+        // position up in `getSeats()` and falls through to storage, silently, when it is not there.
+        val seats = train?.contraption?.getSeats()?.toString() ?: "no train"
+
         "driving: " + (ControlsHandler.getContraption() != null) +
             ", riding: " + (clientPlayer?.vehicle is CarriageContraptionEntity) +
+            ", the client's vehicle is " + (clientPlayer?.vehicle?.javaClass?.simpleName ?: "none") +
+            ", the train here is entity " + (train?.id ?: -1) +
+            ", whose passengers here are " + (train?.passengers?.size ?: -1) +
+            ", its seats are " + seats +
+            ", the crosshair is on " + describeTheCrosshair() +
             ", the train is " + (train?.position()?.toString() ?: "not on this client") +
             ", it says \"" + prompt() + "\""
     }
@@ -1466,6 +1503,9 @@ class TrainCircuitTest {
         /** Long enough for a train that is going to move at all to have covered two blocks. */
         const val PULL_AWAY_PATIENCE = 200
 
+        /** Long enough for a right click to reach the server and the passenger packet to come back. */
+        const val SEAT_PATIENCE = 100
+
         /** How long to keep watching for a corner before settling for a picture of a straight. */
         const val CORNER_PATIENCE = 400
 
@@ -1627,14 +1667,19 @@ private suspend fun ClientScope.driveUntilArrived(asked: TrainCircuitTest.Drive)
  */
 private suspend fun ClientScope.lookAtAndClick(aim: TrainCircuitTest.Aim): Boolean {
     val player = clientPlayer ?: return false
-    val roughly = Vec3.atCenterOf(aim.roughly)
 
-    val toBlock = roughly.subtract(player.eyePosition)
-    player.yRot = (Mth.atan2(toBlock.z, toBlock.x) * 180.0 / Math.PI).toFloat() - 90f
-    player.xRot = (-(Mth.atan2(toBlock.y, toBlock.horizontalDistance()) * 180.0 / Math.PI)).toFloat()
+    // Straight at the block, worked out from the contraption the ray is about to be cast against.
+    // The position handed in is a `BlockPos.containing` of a server-side transform: rounded, so up
+    // to most of a block out, and taken on a different tick from the one the aim happens on. Aiming
+    // at the block's own centre instead means the first look is usually the last, and the sweep
+    // below is a fallback rather than the method.
+    lookExactlyAt(whereItIsExactly(aim.wanted) ?: Vec3.atCenterOf(aim.roughly))
     awaitTicks(2)
 
-    if (!sweep(aim.wanted, down = true) && !sweep(aim.wanted, down = false)) return false
+    if (!aimedAt(aim.wanted) &&
+        !sweep(aim.wanted, down = true) &&
+        !sweep(aim.wanted, down = false)
+    ) return false
 
     if (minecraft.gui.screen() == null && !minecraft.mouseHandler.isMouseGrabbed) {
         minecraft.mouseHandler.grabMouse()
@@ -1644,6 +1689,34 @@ private suspend fun ClientScope.lookAtAndClick(aim: TrainCircuitTest.Aim): Boole
     click(MouseButton.RIGHT)
     awaitTicks(SWEEP_SETTLE)
     return true
+}
+
+/** Points the player's head at a point in the world, exactly. */
+private fun ClientScope.lookExactlyAt(at: Vec3) {
+    val player = clientPlayer ?: return
+    val toBlock = at.subtract(player.eyePosition)
+
+    player.yRot = (Mth.atan2(toBlock.z, toBlock.x) * 180.0 / Math.PI).toFloat() - 90f
+    player.xRot = (-(Mth.atan2(toBlock.y, toBlock.horizontalDistance()) * 180.0 / Math.PI)).toFloat()
+}
+
+/**
+ * Where a block of the train really is, in world coordinates, according to this client.
+ *
+ * The contraption's own transform, taken on the client and at the same partial tick the ray will
+ * use, so the aim and the ray cannot disagree about where the carriage is. A moving train is a metre
+ * further along by the time a server-side answer arrives.
+ */
+private fun ClientScope.whereItIsExactly(wanted: String): Vec3? {
+    val train = trainEntity() ?: return null
+
+    for ((at, info) in train.contraption.blocks) {
+        if (BuiltInRegistries.BLOCK.getKey(info.state().block).toString() == wanted) {
+            return train.toGlobalVector(Vec3.atCenterOf(at), 1f)
+        }
+    }
+
+    return null
 }
 
 /**
@@ -1670,14 +1743,25 @@ private suspend fun ClientScope.sweep(wanted: String, down: Boolean): Boolean {
     return aimedAt(wanted)
 }
 
-/** Whether the crosshair is on the named block of the train, asked the way the game itself asks. */
+/**
+ * Whether the crosshair is on the named block of the train, asked the way the game itself asks.
+ *
+ * Through `getRayInputs`, and that is the whole point rather than a convenience. Create's own handler
+ * shortens its reach to whatever vanilla's hit result found first -- `reach = min(distance to
+ * mc.hitResult, blockInteractionRange)` -- so an aim that passes over a nearer block reaches the
+ * carriage on a full-length ray and stops short of it on the real one.
+ *
+ * Casting the full length here instead let the sweep settle on exactly those aims. It sweeps downward
+ * first, which is where the ground is, so it would find the seat, report success, click, and watch
+ * the handler's shortened ray miss the train entirely. The click landed on nothing and the player
+ * stayed standing: "driving: false, riding: false", with the seat plainly under the crosshair.
+ */
 private fun ClientScope.aimedAt(wanted: String): Boolean {
     val train = trainEntity() ?: return false
     val player = clientPlayer ?: return false
 
-    val origin = player.eyePosition
-    val target = origin.add(player.lookAngle.scale(player.blockInteractionRange()))
-    val hit = ContraptionHandlerClient.rayTraceContraption(origin, target, train) ?: return false
+    val ray = ContraptionHandlerClient.getRayInputs(player)
+    val hit = ContraptionHandlerClient.rayTraceContraption(ray.first, ray.second, train) ?: return false
     val info = train.contraption.blocks[hit.blockPos] ?: return false
 
     return BuiltInRegistries.BLOCK.getKey(info.state().block).toString() == wanted
