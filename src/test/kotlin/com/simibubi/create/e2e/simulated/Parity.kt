@@ -106,34 +106,43 @@ internal suspend fun Stage.bothWays(
         builtAt.z - corner.z,
     )
 
-    stimulate(groundAt)
-    stimulate(subAt)
-    serverTicks(SETTLE)
+    // Everything from here on is in a `finally`, because the body of it can fail.
+    //
+    // A failing assertion used to leave the sub-level behind: the stage sweep does not reach the plot
+    // grid, so the body stayed on the shared server, the physics pipeline went on stepping it, and
+    // the next test to build in the same place assembled a *second* one on top of it. Two overlapping
+    // rigs in a screenshot is what that looks like from the outside, and it is caused by the previous
+    // test having failed rather than by anything the current one did.
+    try {
+        stimulate(groundAt)
+        stimulate(subAt)
+        serverTicks(SETTLE)
 
-    val ground = read(groundAt)
-    val sub = read(subAt)
+        val ground = read(groundAt)
+        val sub = read(subAt)
 
-    val (picture, pictureAgain) = picturesOfBoth(name, groundAt, builtAt)
+        val (picture, pictureAgain) = picturesOfBoth(name, groundAt, builtAt)
 
-    when (expect) {
-        is Parity.Same -> assertTrue(
-            Math.abs(ground - sub) <= expect.tolerance,
-            "On the ground this reads $ground and inside a sub-level $sub. A sub-level is not " +
-                "supposed to change this block's answer, so one of the two is wrong -- and the " +
-                "sub-level half is the one running through Sable's coordinates, lighting and tick. " +
-                "See $picture and $pictureAgain",
-        )
+        when (expect) {
+            is Parity.Same -> assertTrue(
+                Math.abs(ground - sub) <= expect.tolerance,
+                "On the ground this reads $ground and inside a sub-level $sub. A sub-level is not " +
+                    "supposed to change this block's answer, so one of the two is wrong -- and the " +
+                    "sub-level half is the one running through Sable's coordinates, lighting and " +
+                    "tick. See $picture and $pictureAgain",
+            )
 
-        is Parity.Differs -> assertTrue(
-            expect.check(ground, sub),
-            "On the ground this reads $ground and inside a sub-level $sub, which does not hold: " +
-                "${expect.why}. See $picture and $pictureAgain",
-        )
+            is Parity.Differs -> assertTrue(
+                expect.check(ground, sub),
+                "On the ground this reads $ground and inside a sub-level $sub, which does not " +
+                    "hold: ${expect.why}. See $picture and $pictureAgain",
+            )
+        }
+
+        return ParityResult(ground, sub, subLevel, picture, pictureAgain)
+    } finally {
+        clearAllSubLevels()
     }
-
-    clearAllSubLevels()
-
-    return ParityResult(ground, sub, subLevel, picture, pictureAgain)
 }
 
 /**
