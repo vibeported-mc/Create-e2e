@@ -315,7 +315,7 @@ neoForge {
         // the extra minute buys more of the timing-sensitive failures than it is worth. The floor is
         // not the pool anyway -- TrainCircuitTest alone takes three and a half minutes, and its
         // phases are a sequence.
-        clientPool = 6
+        clientPool = 1
     }
 }
 
