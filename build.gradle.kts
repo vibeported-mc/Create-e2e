@@ -41,12 +41,28 @@ val withSimulated = providers.gradleProperty("simulated").orNull != "false"
  */
 val withSodium = providers.gradleProperty("sodium").orNull != "false"
 
+/**
+ * Whether JEI is in the game at all.
+ *
+ * On unless `-Pjei=false`. Create's JEI plugin is a large part of what a player sees of the port, and
+ * it reads recipes on the client -- which 26.2 no longer receives unless asked -- so it is where a
+ * recipe goes missing without a word. Off, the JEI tests are not compiled either: they name JEI's
+ * own types.
+ */
+val withJei = providers.gradleProperty("jei").orNull != "false"
+
 // Kept beside the switch rather than in a catalogue, because they track the builds sitting next to
 // this one and move whenever those are republished.
 val SIMULATED_VERSION = "1.3.2"
 val SABLE_VERSION = "2.0.5"
 val SABLE_COMPANION_VERSION = "1.6.0"
 val VEIL_VERSION = "4.4.1"
+
+if (!withJei) {
+    sourceSets.test {
+        kotlin.exclude("**/compat/Jei*")
+    }
+}
 
 // Off, the package is not compiled either. Excluding it from the run is not enough: it names Sable's
 // and Simulated's own types, and without those on the classpath it does not compile at all.
@@ -255,6 +271,12 @@ dependencies {
     // `@Mod(dist = Dist.CLIENT)`, which is FML's business rather than the build's.
     if (withSodium) {
         implementation("maven.modrinth:AANobbMI:gQDMcWww")
+    }
+
+    // JEI, at the version players of this port actually run rather than the one Create compiles
+    // against, so a test of what shows in JEI is a test of what they see.
+    if (withJei) {
+        implementation("mezz.jei:jei-26.2-neoforge:30.31.0.206")
     }
 
     // JourneyMap, on the same terms and for the same reason: Create has a `@JourneyMapPlugin` that
