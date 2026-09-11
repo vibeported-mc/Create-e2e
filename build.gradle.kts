@@ -301,6 +301,15 @@ neoForge {
         testedMod = mods.getByName("create_e2e")
     }
 
+    // -Pmixinexport: every game writes the classes it actually runs, after every mod's mixins, to
+    // <gameDir>/.mixin.out. Source says what a class should do; this says what the running one
+    // does -- including injections from jars that are not in any source tree here.
+    if (providers.gradleProperty("mixinexport").isPresent) {
+        runs {
+            configureEach { jvmArgument("-Dmixin.debug.export=true") }
+        }
+    }
+
     mcDriver {
         captureDir = layout.buildDirectory.dir("e2e")
 
