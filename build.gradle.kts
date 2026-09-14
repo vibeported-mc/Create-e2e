@@ -51,6 +51,23 @@ val withSodium = providers.gradleProperty("sodium").orNull != "false"
  */
 val withJei = providers.gradleProperty("jei").orNull != "false"
 
+/**
+ * Whether the recipe viewer is EMI, with TooManyRecipeViewers standing in for JEI.
+ *
+ * Off unless `-Ptmrv=true`. TMRV answers to JEI's mod id and carries JEI's API, so Create's JEI plugin
+ * loads into EMI rather than JEI -- the two cannot share a game, which is why this replaces JEI instead
+ * of joining it. Both come from the builds next door: EMI from mavenLocal, TMRV as its built jar.
+ */
+val withTmrv = providers.gradleProperty("tmrv").orNull == "true"
+
+/**
+ * Whether Create: Power Loader is in the game, as the jar built next door.
+ *
+ * Off unless `-PpowerLoader=true`. It is an addon rather than part of Create, and its tests are about
+ * whether the port of it works on this Create, so the rest of the suite does not carry it.
+ */
+val withPowerLoader = providers.gradleProperty("powerLoader").orNull == "true"
+
 // Kept beside the switch rather than in a catalogue, because they track the builds sitting next to
 // this one and move whenever those are republished.
 val SIMULATED_VERSION = "1.3.2"
@@ -58,9 +75,21 @@ val SABLE_VERSION = "2.0.5"
 val SABLE_COMPANION_VERSION = "1.6.0"
 val VEIL_VERSION = "4.4.1"
 
-if (!withJei) {
+if (!withJei || withTmrv) {
     sourceSets.test {
         kotlin.exclude("**/compat/Jei*")
+    }
+}
+
+if (!withPowerLoader) {
+    sourceSets.test {
+        kotlin.exclude("**/compat/PowerLoader*")
+    }
+}
+
+if (!withTmrv) {
+    sourceSets.test {
+        kotlin.exclude("**/compat/Tmrv*")
     }
 }
 
@@ -275,8 +304,16 @@ dependencies {
 
     // JEI, at the version players of this port actually run rather than the one Create compiles
     // against, so a test of what shows in JEI is a test of what they see.
-    if (withJei) {
+    if (withTmrv) {
+        implementation("dev.emi:emi-neoforge:1.1.24-SNAPSHOT+26.2")
+        implementation(files("../TooManyRecipeViewers/build/libs/toomanyrecipeviewers-0.9.jar"))
+    } else if (withJei) {
         implementation("mezz.jei:jei-26.2-neoforge:30.31.0.206")
+    }
+
+    // Its sable-companion is nested in its jar; Sable itself comes with the Simulated family below.
+    if (withPowerLoader) {
+        implementation(files("../create_power_loader/build/libs/create_power_loader-2.0.5-mc26.2.jar"))
     }
 
     // JourneyMap, on the same terms and for the same reason: Create has a `@JourneyMapPlugin` that
