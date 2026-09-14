@@ -88,6 +88,65 @@ class JeiTest {
         )
     }
 
+    /**
+     * The fluid a brewing recipe wants, shown as the potion it is.
+     *
+     * Create's automatic brewing recipes take a potion fluid, asked for by fluid and potion together.
+     * 1.21.1 handed JEI that ingredient's whole stacks; the port built stacks from its fluids alone,
+     * which dropped the potion, so every input showed as an uncraftable potion -- fire resistance
+     * brewed from nothing rather than from an awkward potion.
+     */
+    @Test
+    @DisplayName("JEI shows automatic brewing's input potions as the potions they are")
+    fun `brewing inputs in JEI`(cluster: ClusterScope) = cluster.stage {
+        theClient()
+
+        val waited = waitForTicks(JEI_PATIENCE) { jeiStarted() }
+        assertTrue(jeiStarted(), "JEI had not started on the client after $waited ticks")
+
+        // Every potion fluid in an input slot, and those of them with no potion; then the potions
+        // the fire resistance recipes take.
+        val report = client(watcher) {
+            val runtime = CreateJEI.runtime!!
+            val manager = runtime.recipeManager
+            val type = manager.getRecipeType(Identifier.parse("create:automatic_brewing")).orElseThrow()
+            @Suppress("UNCHECKED_CAST")
+            val category = manager.getRecipeCategory(type) as mezz.jei.api.recipe.category.IRecipeCategory<Any>
+            val focuses = runtime.jeiHelpers.focusFactory.createFocusGroup(emptyList())
+            val potionFluid = com.simibubi.create.AllFluids.POTION.get()
+
+            var inputs = 0
+            var withoutPotion = 0
+            val fireResistanceFrom = sortedSetOf<String>()
+            for (recipe in manager.createRecipeLookup(type).get().toList()) {
+                val layout = manager.createRecipeLayoutDrawable(category, recipe, focuses).orElse(null) ?: continue
+                val view = layout.recipeSlotsView
+                fun potionsIn(role: RecipeIngredientRole): List<String> = view.getSlotViews(role)
+                    .flatMap { it.getIngredients(mezz.jei.api.neoforge.NeoForgeTypes.FLUID_STACK).toList() }
+                    .filter { it.fluid.isSame(potionFluid) }
+                    .map { stack ->
+                        stack.get(net.minecraft.core.component.DataComponents.POTION_CONTENTS)
+                            ?.potion()?.flatMap { it.unwrapKey() }?.map { it.identifier().toString() }?.orElse(null) ?: "none"
+                    }
+
+                val ins = potionsIn(RecipeIngredientRole.INPUT)
+                inputs += ins.size
+                withoutPotion += ins.count { it == "none" }
+                if ("minecraft:fire_resistance" in potionsIn(RecipeIngredientRole.OUTPUT))
+                    fireResistanceFrom.addAll(ins)
+            }
+            "$inputs|$withoutPotion|${fireResistanceFrom.joinToString(",")}"
+        }.split("|")
+
+        val (inputs, withoutPotion, fireResistanceFrom) = Triple(report[0].toInt(), report[1].toInt(), report[2])
+        println("BREWING INPUTS $inputs potion fluids, $withoutPotion without a potion; fire resistance from $fireResistanceFrom")
+
+        assertTrue(inputs > 0, "JEI's automatic brewing recipes take no potion fluids at all, so this proves nothing")
+        assertEquals(0, withoutPotion, "Automatic brewing inputs that show as an uncraftable potion, of $inputs")
+        assertTrue("minecraft:awkward" in fireResistanceFrom.split(","),
+            "Fire resistance is not shown as brewed from an awkward potion; it is brewed from $fireResistanceFrom")
+    }
+
     private suspend fun Stage.recipesIn(category: String): List<String> =
         client(watcher, category) { categoryId ->
             val manager = CreateJEI.runtime!!.recipeManager
