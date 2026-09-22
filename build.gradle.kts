@@ -68,6 +68,14 @@ val withTmrv = providers.gradleProperty("tmrv").orNull == "true"
  */
 val withPowerLoader = providers.gradleProperty("powerLoader").orNull == "true"
 
+/**
+ * Whether Create: Transmission is in the game, as the jar built next door.
+ *
+ * Off unless `-Ptransmission=true`, on the same terms as Power Loader: an addon, whose tests are about
+ * whether its port works on this Create.
+ */
+val withTransmission = providers.gradleProperty("transmission").orNull == "true"
+
 // Kept beside the switch rather than in a catalogue, because they track the builds sitting next to
 // this one and move whenever those are republished.
 val SIMULATED_VERSION = "1.3.2"
@@ -84,6 +92,12 @@ if (!withJei || withTmrv) {
 if (!withPowerLoader) {
     sourceSets.test {
         kotlin.exclude("**/compat/PowerLoader*")
+    }
+}
+
+if (!withTransmission) {
+    sourceSets.test {
+        kotlin.exclude("**/compat/Transmission*")
     }
 }
 
@@ -314,6 +328,10 @@ dependencies {
     // Its sable-companion is nested in its jar; Sable itself comes with the Simulated family below.
     if (withPowerLoader) {
         implementation(files("../create_power_loader/build/libs/create_power_loader-2.0.5-mc26.2.jar"))
+    }
+
+    if (withTransmission) {
+        implementation(files("../CreateTransmission/build/libs/createtransmission-1.2.2+neoforge-create6-26.2.jar"))
     }
 
     // JourneyMap, on the same terms and for the same reason: Create has a `@JourneyMapPlugin` that
