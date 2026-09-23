@@ -83,7 +83,24 @@ class CreateShaderTest {
                 if (com.mojang.blaze3d.systems.RenderSystem.getDevice()
                         .precompilePipeline(pipeline).isValid
                 ) {
-                    ok++
+                    // The cull shader too: it is generated from the same layout plus a second
+                    // body the mod supplies, and a type whose culler will not build is a type
+                    // that draws nothing once culling is on.
+                    val cull = dev.engine_room.flywheel.backend.compute.Compute.backend()
+                        .createPipeline(
+                            dev.engine_room.flywheel.backend.compute.ComputePipeline.Description.of(
+                                "cull " + field.name,
+                                dev.engine_room.flywheel.backend.engine.blaze.CullShaders
+                                    .generate(type, stride),
+                            ),
+                        )
+
+                    if (cull == null) {
+                        failed.add(field.name + " (cull shader)")
+                    } else {
+                        cull.close()
+                        ok++
+                    }
                 } else {
                     failed.add(field.name)
                     dev.engine_room.flywheel.backend.FlwBackend.LOGGER.error(
