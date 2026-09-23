@@ -101,6 +101,70 @@ class ComputeSelfTestTest {
         )
     }
 
+    @Test
+    @DisplayName("Two models, many instances, one indirect call, both halves right")
+    fun `multi model indirect drawing works`(cluster: ClusterScope) = cluster.stage {
+        theClient()
+
+        val result = multiDrawTest()
+
+        println("MULTIDRAW graphics=${result.graphics} passed=${result.passed}")
+
+        assertTrue(
+            result.passed,
+            "Two models drawn in one indirect call did not come out right on ${result.graphics}. " +
+                "This is the shape the engine actually needs -- models sharing one vertex buffer, " +
+                "one index buffer and one instance buffer, each finding its geometry by offset " +
+                "and its instances by gl_DrawID -- and every part of it fails silently: " +
+                "${result.lines.joinToString(" | ")}",
+        )
+    }
+
+    @Test
+    @DisplayName("The GPU chooses which instances to draw, and draws exactly those")
+    fun `gpu culling works`(cluster: ClusterScope) = cluster.stage {
+        theClient()
+
+        val result = cullTest()
+
+        println("CULL graphics=${result.graphics} passed=${result.passed}")
+
+        assertTrue(
+            result.passed,
+            "GPU culling did not produce the right picture on ${result.graphics}. Each model has " +
+                "three instances in three colours and exactly one survives, a different one each " +
+                "-- so keeping everything, compacting to the wrong index, or reading InstanceData " +
+                "with gl_InstanceID directly all come out the wrong colour rather than merely the " +
+                "wrong count: ${result.lines.joinToString(" | ")}",
+        )
+    }
+
+    /** Runs Flywheel's own GPU culling self-test on the client. */
+    private suspend fun dev.vibeported.mc.driver.Stage.cullTest(): SelfTest = client(watcher) {
+        val result = dev.engine_room.flywheel.backend.engine.blaze.CullSelfTest.run()
+
+        SelfTest(
+            passed = result.passed,
+            available = true,
+            compute = "n/a",
+            graphics = com.mojang.blaze3d.systems.RenderSystem.getDevice().deviceInfo.backendName,
+            lines = result.lines,
+        )
+    }
+
+    /** Runs Flywheel's own multi-model indirect self-test on the client. */
+    private suspend fun dev.vibeported.mc.driver.Stage.multiDrawTest(): SelfTest = client(watcher) {
+        val result = dev.engine_room.flywheel.backend.engine.blaze.MultiDrawSelfTest.run()
+
+        SelfTest(
+            passed = result.passed,
+            available = true,
+            compute = "n/a",
+            graphics = com.mojang.blaze3d.systems.RenderSystem.getDevice().deviceInfo.backendName,
+            lines = result.lines,
+        )
+    }
+
     /** Runs Flywheel's own indirect-draw self-test on the client. */
     private suspend fun dev.vibeported.mc.driver.Stage.indirectTest(): SelfTest = client(watcher) {
         val result = dev.engine_room.flywheel.backend.engine.blaze.IndirectDrawSelfTest.run()
