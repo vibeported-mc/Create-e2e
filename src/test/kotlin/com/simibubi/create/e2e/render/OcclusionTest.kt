@@ -16,6 +16,7 @@ import dev.vibeported.mc.driver.server
 import kotlinx.serialization.Serializable
 import net.minecraft.core.BlockPos
 import net.minecraft.world.phys.Vec3
+import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
@@ -45,27 +46,36 @@ import org.junit.jupiter.api.Test
  * - **open** -- the same field with the wall taken away. The honest cost of drawing it all.
  * - **away** -- the camera turned around. The floor, where frustum culling alone has already won.
  *
- * Before occlusion culling exists, `walled` and `open` should be about the same: the machinery is
- * hidden but still drawn. Once it works, `walled` should move toward `away`. That is the whole
- * result, and it needs no readback -- which matters, because reading the pyramid back is the thing
- * currently defeating verification.
- *
- * Measured on 2026-09-23 on Vulkan with no occlusion culling at all, at 1,152 trains:
+ * Before occlusion culling existed, `walled` and `open` came out the same: the machinery was hidden
+ * but still drawn. Measured on 2026-09-23 on Vulkan at 1,152 trains, with the feature absent:
  *
  * ```
  * run A   walled=2498  open=2677  away=3542  walledAgain=2728
  * run B   walled=2621  open=2894  away=3809  walledAgain=2722
- * OCCLUSION work walled=4 open=4
  * ```
  *
  * Read those as: **walled and open are the same to within the noise of this measurement**, which is
  * worth about eight per cent run to run -- `walledAgain` lands above `open` in one run and below it
- * in the other. The same four instancers are processed either way.
+ * in the other. Machinery behind solid stone cost what machinery in plain view cost, because it was
+ * still submitted in full and only rejected per fragment.
  *
- * <p>That is the baseline this exists to establish. Machinery hidden behind solid stone costs what
- * machinery in plain view costs, because it is still submitted in full and only rejected per
- * fragment. The headroom occlusion culling is chasing is the gap up to `away`, not any difference
- * between walled and open.
+ * With the feature working, on the same scene:
+ *
+ * ```
+ * Vulkan   walled=2921  open=2690  away=3176   2754 of 3332 culled as hidden
+ * OpenGL   walled=1509  open=1538  away=1350   2574 of 3332 culled as hidden
+ * ```
+ *
+ * The count is the result; the frame rates are corroboration, and weak corroboration at that. Four
+ * instancers of a few thousand instances are not where a frame goes, so removing three quarters of
+ * them moves the total by less than this measurement's own noise -- on OpenGL `walled` and `open`
+ * are still level, and `away` came in below both. What the scene proves is that the right things
+ * are being culled, and it takes the counts to say so.
+ *
+ * <p>The two backends agreeing is worth more than either number. They cull within a couple of
+ * hundred instances of each other and their deepest pyramid sample agrees to four digits --
+ * 0.004373 against 0.004361 -- which is two entirely separate implementations of the reduction
+ * arriving at the same depth.
  *
  * <p>Two traps this scene has already fallen into, both worth keeping in mind before reading any
  * figure off it. The first reading of a run is the slow one -- teleport, chunk rebuild, pipelines
@@ -91,6 +101,12 @@ class OcclusionTest {
 
         val before = videoSettings()
         applyVideo(UNLIMITED_FRAMERATE, vsync = false, clouds = false)
+
+        // Named rather than left to priority. This is the only backend that does occlusion culling,
+        // and on OpenGL it loses the pick to flywheel:indirect -- so without this the test would
+        // measure the old backend, find no cull counts at all, and fail for a reason that has
+        // nothing to do with what it is testing.
+        useBackend("flywheel:indirect_blaze3d")
 
         buildField()
         forceLoadField()
@@ -284,14 +300,33 @@ class OcclusionTest {
      * A pass that removes nothing and a pass that is never reached both leave every instance drawn,
      * and no frame rate distinguishes them.
      */
+    /** Sets Flywheel's backend the way a player does, with its client command. */
+    private suspend fun Stage.useBackend(id: String) {
+        val got = client(watcher, id) { wanted ->
+            clientPlayer!!.connection.sendCommand("flywheel backend $wanted")
+            awaitTicks(5)
+            dev.engine_room.flywheel.api.backend.Backend.REGISTRY
+                .getIdOrThrow(dev.engine_room.flywheel.api.backend.BackendManager.currentBackend())
+                .toString()
+        }
+
+        assertEquals(
+            id,
+            got,
+            "Flywheel would not switch to $id. It reports itself unsupported here, and every "
+                + "figure below would describe some other backend",
+        )
+    }
+
     private suspend fun Stage.cullCounts(): CullCounts = client(watcher) {
         val counts = dev.engine_room.flywheel.backend.engine.blaze.BlazeEngine.lastDrawManager()
             ?.cullCounts()
 
         if (counts == null) {
-            CullCounts(0, 0, 0, 0, 0, 0)
+            CullCounts(0, 0, 0, 0, 0, 0, 0, 0)
         } else {
-            CullCounts(counts[0], counts[1], counts[2], counts[3], counts[4], counts[5])
+            CullCounts(counts[0], counts[1], counts[2], counts[3], counts[4], counts[5],
+                counts[6], counts[7])
         }
     }
 
@@ -303,10 +338,13 @@ class OcclusionTest {
         val tooClose: Int,
         val offScreen: Int,
         val occluded: Int,
+        val maxFurthest: Int,
+        val maxHiZ: Int,
     ) {
         override fun toString(): String =
             "of $tested tested: $outOfFrustum outside the frustum, $occluded hidden, $visible drawn " +
-                "($tooClose too close to test, $offScreen partly off screen)"
+                "($tooClose too close to test, $offScreen partly off screen); " +
+                "deepest pyramid sample ${maxFurthest / 1e6}, nearest sphere corner ${maxHiZ / 1e6}"
     }
 
     private suspend fun Stage.drawing(): Drawing = client(watcher) {
