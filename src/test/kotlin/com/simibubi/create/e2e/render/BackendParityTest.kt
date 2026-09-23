@@ -64,6 +64,13 @@ class BackendParityTest {
         val state = backend()
         println("PARITY graphics=${state.graphics} backend=${state.backend} instancing=${state.instancing}")
 
+        val work = drawWork()
+        println(
+            "PARITY indirectInstancers=${work.indirectInstancers} " +
+                "directInstancers=${work.directInstancers} " +
+                "indirectCalls=${work.indirectCalls} directCalls=${work.directCalls}",
+        )
+
         shot("parity_machines")
 
         // The same camera, seven ticks on. Seven and not twenty: twenty ticks is exactly one
@@ -85,7 +92,46 @@ class BackendParityTest {
                 "so this scene is being drawn by ordinary block entity renderers and comparing it " +
                 "against the other backend proves nothing",
         )
+
+        // Only the Blaze3D backend publishes these; the OpenGL one leaves them at zero, and asserting
+        // on them there would fail a run that is perfectly correct.
+        if (state.backend == "flywheel:indirect_blaze3d") {
+            // The picture above would look identical either way. An instance type whose cull shader
+            // will not build still draws, through the plain path over an identity list, so a
+            // screenshot cannot tell the two apart -- and the whole point of this backend is the one
+            // it cannot see.
+            assertTrue(
+                work.indirectInstancers > 0,
+                "Nothing was drawn indirectly: all ${work.directInstancers} instancers fell back to " +
+                    "the plain path, so no cull pass ran and the scene above proves only that the " +
+                    "fallback works",
+            )
+            assertTrue(
+                work.directInstancers == 0,
+                "${work.directInstancers} instancers fell back to the plain path while " +
+                    "${work.indirectInstancers} drew indirectly -- some instance type's cull shader " +
+                    "did not build, and the log says which",
+            )
+        }
     }
+
+    /** How the last frame's draws were issued, which is what tells the fast path from the fallback. */
+    private suspend fun Stage.drawWork(): DrawWork = client(watcher) {
+        DrawWork(
+            indirectInstancers = dev.engine_room.flywheel.backend.engine.blaze.BlazeStats.indirectInstancers,
+            directInstancers = dev.engine_room.flywheel.backend.engine.blaze.BlazeStats.directInstancers,
+            indirectCalls = dev.engine_room.flywheel.backend.engine.blaze.BlazeStats.indirectCalls,
+            directCalls = dev.engine_room.flywheel.backend.engine.blaze.BlazeStats.directCalls,
+        )
+    }
+
+    @Serializable
+    private data class DrawWork(
+        val indirectInstancers: Int,
+        val directInstancers: Int,
+        val indirectCalls: Int,
+        val directCalls: Int,
+    )
 
     /**
      * One of each of the things that have gone wrong, plus the one that has not.
