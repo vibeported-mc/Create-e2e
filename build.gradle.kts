@@ -422,7 +422,11 @@ neoForge {
         // the extra minute buys more of the timing-sensitive failures than it is worth. The floor is
         // not the pool anyway -- TrainCircuitTest alone takes three and a half minutes, and its
         // phases are a sequence.
-        clientPool = 6
+        //
+        // -Pclients=N overrides it, which IndirectStressTest needs: a frame rate measured while
+        // five other Minecraft clients fight over the same GPU is not a number comparable to
+        // anything. That test is run on its own, with one client.
+        clientPool = providers.gradleProperty("clients").map(String::toInt).orElse(6)
     }
 }
 
