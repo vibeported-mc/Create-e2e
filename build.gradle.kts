@@ -316,8 +316,8 @@ dependencies {
     implementation("com.simibubi.create:create-26.2")
 
     // Sodium, by Modrinth's own coordinates rather than a readable version, because that is what
-    // their Maven serves: project AANobbMI at version gQDMcWww, which is
-    // mc26.2-0.9.2-beta.1-neoforge.
+    // their Maven serves: project AANobbMI at version DmnNKsfS, which is mc26.2-0.9.2-neoforge --
+    // the latest release rather than a beta, since what players run is what this should be testing.
     //
     // On the ordinary classpath, which is not the obvious place for a rendering mod. ModDevGradle
     // used to give each run a classpath of its own, and putting Sodium on the client's alone would
@@ -327,7 +327,7 @@ dependencies {
     // and this process -- and what keeps it off the two that do not draw is Sodium's own
     // `@Mod(dist = Dist.CLIENT)`, which is FML's business rather than the build's.
     if (withSodium) {
-        implementation("maven.modrinth:AANobbMI:gQDMcWww")
+        implementation("maven.modrinth:AANobbMI:DmnNKsfS")
     }
 
     // JEI, at the version players of this port actually run rather than the one Create compiles
