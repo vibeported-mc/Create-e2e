@@ -75,14 +75,42 @@ class CreateShaderTest {
             val stride = dev.engine_room.flywheel.lib.math.MoreMath.align16(type.layout().byteSize())
 
             try {
-                val shaders = dev.engine_room.flywheel.backend.engine.blaze.BlazeShaders
-                    .generate(type, stride)
-                val pipeline = dev.engine_room.flywheel.backend.engine.blaze.PipelineSelfTest
-                    .pipelineFor(shaders)
+                // Every fog and cutout the backend can compile in, not just one pair. They are
+                // compiled *into* the fragment shader, because on 26.2 a pipeline carries its
+                // shaders -- so "the rotating shader compiles" is a statement about one combination
+                // out of twelve, and the one that breaks is the one nobody built.
+                val fogs = dev.engine_room.flywheel.lib.material.FogShaders::class.java
+                    .declaredFields
+                    .filter { dev.engine_room.flywheel.api.material.FogShader::class.java.isAssignableFrom(it.type) }
+                    .map { it.isAccessible = true; (it.get(null) as dev.engine_room.flywheel.api.material.FogShader).source() }
+                val cutouts = dev.engine_room.flywheel.lib.material.CutoutShaders::class.java
+                    .declaredFields
+                    .filter { dev.engine_room.flywheel.api.material.CutoutShader::class.java.isAssignableFrom(it.type) }
+                    .map { it.isAccessible = true; (it.get(null) as dev.engine_room.flywheel.api.material.CutoutShader).source() }
 
-                if (com.mojang.blaze3d.systems.RenderSystem.getDevice()
-                        .precompilePipeline(pipeline).isValid
-                ) {
+                var shaders = dev.engine_room.flywheel.backend.engine.blaze.BlazeShaders
+                    .generate(type, stride, fogs.first(), cutouts.first())
+                var valid = true
+
+                for (fog in fogs) {
+                    for (cutout in cutouts) {
+                        shaders = dev.engine_room.flywheel.backend.engine.blaze.BlazeShaders
+                            .generate(type, stride, fog, cutout)
+                        val pipeline = dev.engine_room.flywheel.backend.engine.blaze.PipelineSelfTest
+                            .pipelineFor(shaders)
+
+                        if (!com.mojang.blaze3d.systems.RenderSystem.getDevice()
+                                .precompilePipeline(pipeline).isValid
+                        ) {
+                            failed.add("${field.name} (fog $fog, cutout $cutout)")
+                            valid = false
+                            break
+                        }
+                    }
+                    if (!valid) break
+                }
+
+                if (valid) {
                     // The cull shader too: it is generated from the same layout plus a second
                     // body the mod supplies, and a type whose culler will not build is a type
                     // that draws nothing once culling is on.
