@@ -11,6 +11,7 @@ import dev.vibeported.mc.driver.Stage
 import dev.vibeported.mc.driver.client
 import dev.vibeported.mc.driver.junit.DrivesMinecraft
 import dev.vibeported.mc.driver.junit.stage
+import dev.vibeported.mc.driver.server
 import kotlinx.serialization.Serializable
 import net.minecraft.core.BlockPos
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -94,6 +95,19 @@ class IndirectStressTest {
         // measuring the cheap case.
         serverTicks(SPIN_UP_TICKS)
 
+        // Asked of the server before anything is asked of the picture. Rotation is computed in the
+        // shader from a clock uniform, so a field standing still uploads and draws exactly like one
+        // that is turning -- and a benchmark of stationary geometry measures the cheap case while
+        // claiming to measure the expensive one.
+        val turning = speeds()
+
+        assertTrue(
+            turning.first != 0.0f && turning.last != 0.0f,
+            "The field is not turning: the first shaft reads ${turning.first} and the last " +
+                "${turning.last}. Both ends are checked because one motor failing to drive its row " +
+                "leaves most of the scene moving and the measurement still wrong",
+        )
+
         // Looking back across the whole field from above one corner, so as much of it as possible
         // is in frame and inside the culling frustum -- the thing being measured is drawing, and
         // machinery behind the camera is not drawn by any backend.
@@ -108,6 +122,15 @@ class IndirectStressTest {
         val measured = drawing()
 
         shot("indirect_stress")
+
+        // A second shot, twenty ticks later. Rotation is computed in the shader from a clock
+        // uniform rather than from instance data, so a field that has stopped turning uploads and
+        // draws exactly as one that is turning -- the only difference is between two frames.
+        // Seven ticks, not twenty. Twenty is exactly one second, and a shaft's angle is a
+        // function of seconds -- so at any whole second the field is back where a full rotation
+        // left it and two frames a second apart can look identical while everything is turning.
+        serverTicks(7)
+        shot("indirect_stress_later")
 
         assertTrue(
             measured.alive,
@@ -153,6 +176,15 @@ class IndirectStressTest {
             fill(at(-1, y, 0), at(-1, y, WIDTH - 1), "create:creative_motor[facing=east]")
         }
     }
+
+    /** What the first and last rows of the field are actually doing, in rpm. */
+    private suspend fun Stage.speeds(): Speeds =
+        server(at(0, FLOOR, 0), at(LENGTH - 1, FLOOR + (DECKS - 1) * DECK_GAP, WIDTH - 1)) { first, last ->
+            Speeds(speedOf(first), speedOf(last))
+        }
+
+    @Serializable
+    private data class Speeds(val first: Float, val last: Float)
 
     /** Takes the frame rate cap and vsync off, so what is measured is the renderer. */
     private suspend fun Stage.unlockFramerate() {
@@ -226,6 +258,17 @@ class IndirectStressTest {
         const val MEASURE_TICKS = 100
     }
 }
+
+/**
+ * A kinetic block's speed, or zero where there is none.
+ *
+ * A top-level function rather than a method, because it is called from a body that runs on the
+ * server, and those may not reach back into the test object they were written in.
+ */
+private fun dev.vibeported.mc.driver.ServerScope.speedOf(where: BlockPos): Float =
+    (serverLevel.getBlockEntity(where)
+        as? com.simibubi.create.content.kinetics.base.KineticBlockEntity)
+        ?.speed ?: 0.0f
 
 private fun middleOf(pos: BlockPos) = net.minecraft.world.phys.Vec3(
     pos.x + 0.5,
