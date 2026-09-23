@@ -139,6 +139,70 @@ class ComputeSelfTestTest {
         )
     }
 
+    @Test
+    @DisplayName("A pipeline can be built from shader source generated at runtime")
+    fun `generated shaders reach the pipeline`(cluster: ClusterScope) = cluster.stage {
+        theClient()
+
+        val result = generatedShaderTest()
+
+        println("GENERATED graphics=${result.graphics} passed=${result.passed}")
+
+        assertTrue(
+            result.passed,
+            "A pipeline built from runtime-generated shader source did not draw on " +
+                "${result.graphics}. Flywheel's vertex shaders are assembled per instance type, " +
+                "so none of them can be a file -- and unlike the OpenGL backend, a RenderPipeline " +
+                "names its shaders by Identifier and Minecraft resolves them. If this fails the " +
+                "backend has no way to express its shaders at all: ${result.lines.joinToString(" | ")}",
+        )
+    }
+
+    @Test
+    @DisplayName("An instance survives the round trip through generated unpacking")
+    fun `instance layouts round trip`(cluster: ClusterScope) = cluster.stage {
+        theClient()
+
+        val result = layoutTest()
+
+        println("LAYOUT graphics=${result.graphics} passed=${result.passed}")
+
+        assertTrue(
+            result.passed,
+            "An instance written by Flywheel's own writer did not come back out of the generated " +
+                "unpacking intact on ${result.graphics}. Offsets, sign extension, normalisation " +
+                "divisors and endianness all fail here -- and all of them fail invisibly anywhere " +
+                "else, because wrong instance data does not crash or warn, it draws the right " +
+                "number of things slightly wrong: ${result.lines.joinToString(" | ")}",
+        )
+    }
+
+    /** Runs Flywheel's own instance layout round-trip on the client. */
+    private suspend fun dev.vibeported.mc.driver.Stage.layoutTest(): SelfTest = client(watcher) {
+        val result = dev.engine_room.flywheel.backend.engine.blaze.LayoutSelfTest.run()
+
+        SelfTest(
+            passed = result.passed,
+            available = true,
+            compute = "n/a",
+            graphics = com.mojang.blaze3d.systems.RenderSystem.getDevice().deviceInfo.backendName,
+            lines = result.lines,
+        )
+    }
+
+    /** Runs Flywheel's own generated-shader self-test on the client. */
+    private suspend fun dev.vibeported.mc.driver.Stage.generatedShaderTest(): SelfTest = client(watcher) {
+        val result = dev.engine_room.flywheel.backend.engine.blaze.GeneratedShaderSelfTest.run()
+
+        SelfTest(
+            passed = result.passed,
+            available = true,
+            compute = "n/a",
+            graphics = com.mojang.blaze3d.systems.RenderSystem.getDevice().deviceInfo.backendName,
+            lines = result.lines,
+        )
+    }
+
     /** Runs Flywheel's own GPU culling self-test on the client. */
     private suspend fun dev.vibeported.mc.driver.Stage.cullTest(): SelfTest = client(watcher) {
         val result = dev.engine_room.flywheel.backend.engine.blaze.CullSelfTest.run()
