@@ -399,17 +399,45 @@ internal suspend fun Stage.releaseRightClick() {
  *
  * A click that lands on the wrong block does something plausible and wrong, which is worse to debug
  * than one that lands on nothing -- so the aim is checked before the button is pressed.
+ *
+ * Given a moment to come true rather than sampled once. `minecraft.hitResult` is recomputed per
+ * frame from wherever the player is *now*, and a player told to stand somewhere is still settling
+ * for a few ticks after arriving -- so a single read taken straight after a move is a read of a
+ * position that is about to change. That failed as a crosshair one block short of its target, with
+ * the player's reported y differing between runs (64.23 against 64.00), and only ever under load,
+ * which is exactly when those few ticks take longer to pass.
  */
 internal suspend fun Stage.requireLookingAt(expected: BlockPos) {
     val looking = client(watcher, expected) { wanted ->
-        val hit = minecraft.hitResult
-        hit is net.minecraft.world.phys.BlockHitResult &&
-            hit.type != net.minecraft.world.phys.HitResult.Type.MISS &&
-            hit.blockPos == wanted
+        var onTarget = false
+
+        repeat(AIM_PATIENCE_TICKS) {
+            val hit = minecraft.hitResult
+            onTarget = hit is net.minecraft.world.phys.BlockHitResult &&
+                hit.type != net.minecraft.world.phys.HitResult.Type.MISS &&
+                hit.blockPos == wanted
+
+            if (onTarget) return@repeat
+            awaitTicks(1)
+        }
+
+        onTarget
     }
 
     if (!looking) throw AssertionError("The crosshair is not on $expected. ${whereThePlayerIs()}")
 }
+
+/**
+ * How long to let an aim settle, in client ticks.
+ *
+ * Waited out on the client, inside one body, rather than by pumping the server. That distinction
+ * cost a suite run: `waitForTicks` advances the *server*, which every client in the pool shares, and
+ * a crosshair is a *client* value recomputed per frame. Polling the one through the other made every
+ * aim check burn up to two seconds of everybody's server time -- and where a screen was open, so the
+ * hit result never moved, it burned all of it every time. Four-minute timeouts in the screen tests
+ * were the result.
+ */
+private const val AIM_PATIENCE_TICKS = 20
 
 /** A point in the screen's own coordinates, as a screen's own layout reports one. */
 @Serializable

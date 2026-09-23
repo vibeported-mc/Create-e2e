@@ -100,3 +100,38 @@ suspend fun Stage.restoreBackend() {
         awaitTicks(5)
     }
 }
+
+/**
+ * Where the cull pass dropped instances, which is the only way to see why it culled nothing.
+ *
+ * A pass that removes nothing and a pass that is never reached both leave every instance drawn,
+ * and no frame rate distinguishes them.
+ */
+suspend fun Stage.cullCounts(): CullCounts = client(watcher) {
+    val counts = dev.engine_room.flywheel.backend.engine.blaze.BlazeEngine.lastDrawManager()
+        ?.cullCounts()
+
+    if (counts == null) {
+        CullCounts(0, 0, 0, 0, 0, 0, 0, 0)
+    } else {
+        CullCounts(counts[0], counts[1], counts[2], counts[3], counts[4], counts[5],
+            counts[6], counts[7])
+    }
+}
+
+@Serializable
+data class CullCounts(
+    val visible: Int,
+    val tested: Int,
+    val outOfFrustum: Int,
+    val tooClose: Int,
+    val offScreen: Int,
+    val occluded: Int,
+    val maxFurthest: Int,
+    val maxHiZ: Int,
+) {
+    override fun toString(): String =
+        "of $tested tested: $outOfFrustum outside the frustum, $occluded hidden, $visible drawn " +
+            "($tooClose too close to test, $offScreen partly off screen); " +
+            "deepest pyramid sample ${maxFurthest / 1e6}, nearest sphere corner ${maxHiZ / 1e6}"
+}

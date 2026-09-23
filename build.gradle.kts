@@ -87,6 +87,7 @@ val withTransmission = providers.gradleProperty("transmission").orNull == "true"
 // Kept beside the switch rather than in a catalogue, because they track the builds sitting next to
 // this one and move whenever those are republished.
 val FLYWHEEL_VERSION = "1.0.6"
+val BLAZE3DX_VERSION = "0.1.0"
 val SIMULATED_VERSION = "1.3.2"
 val SABLE_VERSION = "2.0.5"
 val SABLE_COMPANION_VERSION = "1.6.0"
@@ -387,6 +388,12 @@ dependencies {
     // own jar, and naming it as a runtime dependency would put the same classes on the classpath
     // twice, once loose and once extracted from a jar-in-jar.
     testCompileOnly("dev.engine-room.flywheel:flywheel-neoforge-26.2:$FLYWHEEL_VERSION")
+
+    // And the library under it, for the same reason and on the same terms. The compute, buffer and
+    // generated-shader layers moved out of Flywheel into blaze3dx so that Veil can share them, so
+    // the tests that name those types have to name it too. It reaches the game nested inside
+    // Flywheel, which is nested inside Create -- hence compile-only here as well.
+    testCompileOnly("dev.blaze3dx:blaze3dx-neoforge-26.2:$BLAZE3DX_VERSION")
 
     implementation("dev.vibeported.mc.e2e:driver")
     implementation(libs.kotlinforforge)

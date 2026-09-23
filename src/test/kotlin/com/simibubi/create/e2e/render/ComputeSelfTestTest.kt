@@ -345,8 +345,8 @@ class ComputeSelfTestTest {
 
     /** Runs Flywheel's own self-test on the client, and brings back what it said. */
     private suspend fun dev.vibeported.mc.driver.Stage.selfTest(): SelfTest = client(watcher) {
-        val backend = dev.engine_room.flywheel.backend.compute.Compute.backend()
-        val result = dev.engine_room.flywheel.backend.compute.ComputeSelfTest.run()
+        val backend = dev.blaze3dx.compute.Compute.backend()
+        val result = dev.blaze3dx.compute.ComputeSelfTest.run()
 
         SelfTest(
             passed = result.passed,

@@ -114,9 +114,9 @@ class CreateShaderTest {
                     // The cull shader too: it is generated from the same layout plus a second
                     // body the mod supplies, and a type whose culler will not build is a type
                     // that draws nothing once culling is on.
-                    val cull = dev.engine_room.flywheel.backend.compute.Compute.backend()
+                    val cull = dev.blaze3dx.compute.Compute.backend()
                         .createPipeline(
-                            dev.engine_room.flywheel.backend.compute.ComputePipeline.Description.of(
+                            dev.blaze3dx.compute.ComputePipeline.Description.of(
                                 "cull " + field.name,
                                 dev.engine_room.flywheel.backend.engine.blaze.CullShaders
                                     .generate(type, stride),
@@ -133,7 +133,7 @@ class CreateShaderTest {
                     failed.add(field.name)
                     dev.engine_room.flywheel.backend.FlwBackend.LOGGER.error(
                         "FLWSOURCE-BEGIN {}",
-                        dev.engine_room.flywheel.backend.engine.blaze.GeneratedShaders
+                        dev.blaze3dx.shader.GeneratedShaders
                             .get(shaders, com.mojang.blaze3d.shaders.ShaderType.VERTEX),
                     )
                 }
