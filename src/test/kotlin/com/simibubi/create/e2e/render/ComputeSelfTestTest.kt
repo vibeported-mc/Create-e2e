@@ -177,6 +177,38 @@ class ComputeSelfTestTest {
         )
     }
 
+    @Test
+    @DisplayName("The shader assembled for each real instance type compiles")
+    fun `generated instance pipelines compile`(cluster: ClusterScope) = cluster.stage {
+        theClient()
+
+        val result = pipelineTest()
+
+        println("PIPELINE graphics=${result.graphics} passed=${result.passed}")
+
+        assertTrue(
+            result.passed,
+            "A shader Flywheel assembled for a real instance type would not compile on " +
+                "${result.graphics}. Every instance type gets its own, built from its layout and " +
+                "a body a mod supplied, so this is a runtime question and the answer differs per " +
+                "backend -- Vulkan runs the same GLSL through shaderc to SPIR-V and rebinds it " +
+                "against the declared layout: ${result.lines.joinToString(" | ")}",
+        )
+    }
+
+    /** Asks the client to assemble and compile a pipeline per instance type. */
+    private suspend fun dev.vibeported.mc.driver.Stage.pipelineTest(): SelfTest = client(watcher) {
+        val result = dev.engine_room.flywheel.backend.engine.blaze.PipelineSelfTest.run()
+
+        SelfTest(
+            passed = result.passed,
+            available = true,
+            compute = "n/a",
+            graphics = com.mojang.blaze3d.systems.RenderSystem.getDevice().deviceInfo.backendName,
+            lines = result.lines,
+        )
+    }
+
     /** Runs Flywheel's own instance layout round-trip on the client. */
     private suspend fun dev.vibeported.mc.driver.Stage.layoutTest(): SelfTest = client(watcher) {
         val result = dev.engine_room.flywheel.backend.engine.blaze.LayoutSelfTest.run()
