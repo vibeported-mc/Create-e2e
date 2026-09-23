@@ -133,6 +133,28 @@ tasks.withType<Test>().configureEach {
     // for" from "came up on OpenGL because Vulkan would not start".
     providers.gradleProperty("graphics").orNull?.let { systemProperty("e2e.graphics", it) }
 
+    // Which GPU Vulkan runs on, by restricting the loader to one driver's ICD manifest.
+    //
+    // Blaze3D gives no say in this: `VulkanBackend.findPhysicalDevice` is private and prefers a
+    // discrete adapter, so on a machine with both a dedicated card and an integrated one it always
+    // takes the card. Pointing the loader at a single ICD is the only lever from outside, and it is
+    // the Vulkan loader's own documented one.
+    //
+    // ```
+    // -PvulkanIcd="C:\Windows\System32\DriverStore\FileRepository\iigd_dch.inf_amd64_*\igvk64.json"
+    // ```
+    //
+    // Both names are set because the loader renamed this: VK_DRIVER_FILES is current and
+    // VK_ICD_FILENAMES is the older spelling still honoured by older loaders.
+    //
+    // This has no effect on OpenGL, which picks its adapter through the display driver rather than
+    // through a loader manifest -- an OpenGL run on a particular GPU has to be arranged in Windows'
+    // own graphics settings.
+    providers.gradleProperty("vulkanIcd").orNull?.let {
+        environment("VK_DRIVER_FILES", it)
+        environment("VK_ICD_FILENAMES", it)
+    }
+
     if (!withSimulated) {
         exclude("**/simulated/**")
     }
