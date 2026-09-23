@@ -58,8 +58,22 @@ import org.junit.jupiter.api.Test
  * separate sessions -- the difference is 0.55/255 head on and 0.92/255 angled. There is no sorting
  * fault to see.
  *
- * So the OIT rebuild stays deferred, now on evidence that actually stacks fluid behind fluid rather
- * than on a scene that could not have shown a difference either way.
+ * The OpenGL side really did run its chain -- `oitChainRan` is asserted, because two matching
+ * pictures say nothing at all if the backend that has order independence never used it.
+ *
+ * ## Why they match
+ *
+ * Not because the approximation is good. OpenGL enters its chain whenever any material is
+ * `ORDER_INDEPENDENT`, with no check that anything actually overlaps, and Create's only such
+ * material is the fluid inside a glass pipe. A pipe is an opaque tube with a window: the near pipe's
+ * far wall sits between its fluid and the next pipe's fluid, so no two order-independent surfaces
+ * ever blend with each other. The chain runs its four passes and reaches the answer ordinary
+ * blending already had, because nothing was out of order.
+ *
+ * So what is established is narrower than "OIT is unnecessary": Create's one order-independent
+ * material is always enclosed, and therefore cannot produce the artifact. A mod that attached
+ * `ORDER_INDEPENDENT` to unenclosed geometry would be drawn wrongly by the Blaze3D backend, and this
+ * test would not catch it -- it has no such geometry to offer.
  */
 @DrivesMinecraft
 class TransparencyStackTest {
@@ -85,7 +99,7 @@ class TransparencyStackTest {
         val a = fluidIn(at(0, TOP_TANK, PIPES_A))
         val b = fluidIn(at(0, TOP_TANK, PIPES_B))
         val c = fluidIn(at(0, TOP_TANK, PIPES_C))
-        println("FLUID a=$a b=$b c=$c")
+        println("FLUID a=$a b=$b c=$c oitChainRan=${oitChainRan()}")
 
         // Down the row at the height the pipes and walls span, so every layer is in front of every
         // layer behind it.
@@ -101,6 +115,13 @@ class TransparencyStackTest {
         serverTicks(20)
 
         shot("transparency_stack_angled")
+
+        assertTrue(
+            backendId() != "flywheel:indirect" || oitChainRan(),
+            "The OpenGL backend never entered its order-independent chain, so comparing its " +
+                "picture against the Vulkan one proves nothing about order independence -- it " +
+                "compares two ordinary blends",
+        )
 
         assertTrue(
             a > 0 && b > 0 && c > 0,
@@ -165,6 +186,22 @@ class TransparencyStackTest {
             "summon minecraft:creeper ${zombie.x} ${zombie.y} ${zombie.z} " +
                 "{NoAI:1b,NoGravity:1b,Silent:1b,PersistenceRequired:1b,Invulnerable:1b}",
         )
+    }
+
+    /**
+     * Whether the OpenGL backend actually entered its order-independent chain.
+     *
+     * Without this the comparison is worthless: if the backend that has OIT never ran it, two
+     * matching pictures say only that two ordinary blends agree.
+     */
+    private suspend fun Stage.oitChainRan(): Boolean = dev.vibeported.mc.driver.client(watcher) {
+        dev.engine_room.flywheel.backend.engine.blaze.BlazeStats.oitChainRan
+    }
+
+    private suspend fun Stage.backendId(): String = dev.vibeported.mc.driver.client(watcher) {
+        dev.engine_room.flywheel.api.backend.Backend.REGISTRY
+            .getIdOrThrow(dev.engine_room.flywheel.api.backend.BackendManager.currentBackend())
+            .toString()
     }
 
     private suspend fun Stage.fillTank(tank: BlockPos, amount: Int) {
