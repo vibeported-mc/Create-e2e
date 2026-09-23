@@ -69,3 +69,18 @@ suspend fun Stage.useBackend(id: String) {
         )
     }
 }
+
+
+/**
+ * Whether Flywheel would run a given backend here, without switching to it.
+ *
+ * For a test that compares two backends and must skip the comparison rather than fail it where the
+ * second one cannot run -- flywheel:indirect needs a GL context and reports itself unsupported on
+ * Vulkan, which is a fact about the machine and not a defect.
+ */
+suspend fun Stage.canUse(id: String): Boolean = client(watcher, id) { wanted ->
+    val backend = dev.engine_room.flywheel.api.backend.Backend.REGISTRY
+        .get(net.minecraft.resources.Identifier.parse(wanted))
+
+    backend != null && backend.isSupported()
+}

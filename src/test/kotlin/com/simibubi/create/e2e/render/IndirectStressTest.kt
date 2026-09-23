@@ -63,6 +63,24 @@ import org.junit.jupiter.api.Test
  * STRESS backend=flywheel:indirect_blaze3d fps=799 trains=10000 parts=40000   (Vulkan)
  * ```
  *
+ * Those two are from separate runs and should not be subtracted from one another. The comparison
+ * worth making is the `STRESS rival` line, which measures both backends in one client on one field
+ * with nothing rebuilt in between, and then returns to the first to show what order was worth:
+ *
+ * ```
+ * STRESS rival backend=flywheel:indirect_blaze3d fps=1345
+ *              against flywheel:indirect fps=854 then 907
+ * ```
+ *
+ * The older backend's two readings bracket the rival instead of closing on it, so the gap is the
+ * backend rather than warm-up -- which is the failure mode this scene invites, and which cost a
+ * wrong conclusion once already in [OcclusionTest]. That measurement is why
+ * `flywheel:indirect_blaze3d` was promoted past `flywheel:indirect`.
+ *
+ * Part of the margin is occlusion culling, which the older backend does not do at all. This is not
+ * evidence that indirect drawing through Blaze3D is half again as fast -- it is evidence that the
+ * whole path is, on this scene.
+ *
  * Read that beside the older shaft field, where the same two backends were 2135 and 4323. The
  * difference is the shape of the work, not a regression: a field of shafts seen from outside is
  * thousands of small instances and little else, so it measures instancing. This scene puts the
@@ -193,6 +211,49 @@ class IndirectStressTest {
                 "trains=$TRAINS parts=$MOVING_PARTS instancing=${measured.instancing}"
         )
         println("STRESS facingAway fps=${away.fps} work=$work")
+
+        // And the same scene on the other backend, without rebuilding it.
+        //
+        // This is the comparison the priority question turns on -- flywheel:indirect_blaze3d sits
+        // below flywheel:indirect and should not be promoted until it wins here -- and it is only
+        // worth making back to back. Run to run this scene moves by several per cent, which is
+        // wider than the gap being looked for, so two numbers from two logs cannot settle it. One
+        // client, one field, one camera, the backend swapped underneath.
+        //
+        // Only on OpenGL: flywheel:indirect reports itself unsupported without a GL context, so on
+        // Vulkan there is no second backend to compare against.
+        val rival = if (backendId() == "flywheel:indirect_blaze3d") "flywheel:indirect" else
+            "flywheel:indirect_blaze3d"
+
+        if (canUse(rival)) {
+            spectateAt(cameraFrom(), fieldCentre())
+            useBackend(rival)
+            serverTicks(SETTLE_TICKS)
+
+            // Discarded the same way the first reading is: switching backends throws away every
+            // instancer and rebuilds it, and the frames during that are not steady state.
+            drawing()
+            serverTicks(MEASURE_TICKS)
+            val other = drawing()
+
+            // Back to the first backend and measured again, because order is a confound here and
+            // not a small one. The rival is read later, with chunks meshed and pipelines built,
+            // and this scene moves several per cent run to run anyway. If the two readings of the
+            // first backend agree, the gap between them and the rival is the backend; if the
+            // second one has caught up, the gap was warm-up.
+            useBackend(measured.backend)
+            serverTicks(SETTLE_TICKS)
+            drawing()
+            serverTicks(MEASURE_TICKS)
+            val again = drawing()
+
+            println(
+                "STRESS rival backend=${other.backend} fps=${other.fps} " +
+                    "against ${measured.backend} fps=${measured.fps} then ${again.fps}"
+            )
+        } else {
+            println("STRESS rival $rival is unsupported here, so there is nothing to compare")
+        }
 
         // F3 off again and the video options put back as they were found. Clients are shared between
         // tests and these settings are saved to disk, so a test that unlocks the frame rate and
