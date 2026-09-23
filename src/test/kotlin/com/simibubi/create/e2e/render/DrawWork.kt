@@ -84,3 +84,19 @@ suspend fun Stage.canUse(id: String): Boolean = client(watcher, id) { wanted ->
 
     backend != null && backend.isSupported()
 }
+
+
+/**
+ * Hands the backend choice back to Flywheel.
+ *
+ * Every [useBackend] needs one of these before the test ends. Clients are pooled and reused, and
+ * the choice lives for the client's whole lifetime -- so a test that pins a backend and walks away
+ * has changed what every later test on that client runs on, which is the same trap the video
+ * settings here are careful about.
+ */
+suspend fun Stage.restoreBackend() {
+    client(watcher) {
+        clientPlayer!!.connection.sendCommand("flywheel backend DEFAULT")
+        awaitTicks(5)
+    }
+}

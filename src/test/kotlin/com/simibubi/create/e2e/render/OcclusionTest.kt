@@ -170,6 +170,7 @@ class OcclusionTest {
         println("OCCLUSION cull $cull")
 
         applyVideo(before.framerateLimit, before.vsync, before.clouds)
+        restoreBackend()
         runCommand("forceload remove all")
 
         assertTrue(

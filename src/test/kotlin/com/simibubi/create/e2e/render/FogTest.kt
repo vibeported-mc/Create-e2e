@@ -83,6 +83,9 @@ class FogTest {
 
         println("FOG dry=${dry.environmentalEnd} wet=${wet.environmentalEnd}")
 
+        // Before the assertions, so a failure still hands the client back as it was found.
+        restoreBackend()
+
         // Both halves of the check, and neither is enough alone.
         //
         // That the backend's own uniforms follow the camera into the water is what says the fog is

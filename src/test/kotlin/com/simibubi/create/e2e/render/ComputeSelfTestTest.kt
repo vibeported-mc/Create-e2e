@@ -93,6 +93,9 @@ class ComputeSelfTestTest {
         println("PYRAMID graphics=${result.graphics} passed=${result.passed} " +
             "| ${result.lines.joinToString(" | ")}")
 
+        // Before the assertion, so a failure still hands the client back as it was found.
+        restoreBackend()
+
         assertTrue(
             result.passed,
             "A depth pyramid could not be built, so occlusion culling has nothing to read. This is " +

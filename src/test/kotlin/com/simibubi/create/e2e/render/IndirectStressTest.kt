@@ -255,9 +255,12 @@ class IndirectStressTest {
             println("STRESS rival $rival is unsupported here, so there is nothing to compare")
         }
 
-        // F3 off again and the video options put back as they were found. Clients are shared between
-        // tests and these settings are saved to disk, so a test that unlocks the frame rate and
-        // walks away has changed what every later test measures.
+        // F3 off again, the backend choice handed back, and the video options put back as they were
+        // found. Clients are shared between tests and these settings outlive the test, so one that
+        // unlocks the frame rate or pins a backend and walks away has changed what every later test
+        // measures. Switching back to the backend this started on is not enough on its own: that
+        // pins it by name, where it arrived here as whatever Flywheel would pick.
+        restoreBackend()
         pressF3()
         applyVideo(before.framerateLimit, before.vsync, before.renderDistance, before.clouds)
         runCommand("forceload remove all")
