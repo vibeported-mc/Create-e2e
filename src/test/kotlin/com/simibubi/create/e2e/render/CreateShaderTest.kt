@@ -86,6 +86,11 @@ class CreateShaderTest {
                     ok++
                 } else {
                     failed.add(field.name)
+                    dev.engine_room.flywheel.backend.FlwBackend.LOGGER.error(
+                        "FLWSOURCE-BEGIN {}",
+                        dev.engine_room.flywheel.backend.engine.blaze.GeneratedShaders
+                            .get(shaders, com.mojang.blaze3d.shaders.ShaderType.VERTEX),
+                    )
                 }
             } catch (e: Exception) {
                 failed.add(field.name + " (" + e + ")")
