@@ -16,6 +16,7 @@ import dev.vibeported.mc.driver.junit.stage
 import dev.vibeported.mc.driver.lookAt
 import dev.vibeported.mc.driver.mouseDown
 import dev.vibeported.mc.driver.mouseUp
+import dev.vibeported.mc.driver.server
 import net.minecraft.core.BlockPos
 import net.minecraft.world.phys.Vec3
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -96,13 +97,13 @@ class CrumblingTest {
 
         holdAttack()
         try {
-            // Long enough to actually get somewhere, which is the whole difficulty of this test.
-            // Vanilla reports the breaking stage as `(progress * 10) - 1`, and a stage of -1 does
-            // not mean "barely started", it *removes* the progress entry -- so a block that is
-            // under a tenth broken is indistinguishable from one nobody is touching. A cogwheel
-            // mined bare-handed takes a couple of hundred ticks to get that far, and the first
-            // version of this held the button for twenty and concluded the overlay was broken.
-            serverTicks(120)
+            // Long enough to be well along, which is the whole difficulty of this test. Vanilla
+            // reports the breaking stage as `(progress * 10) - 1`, and a stage of -1 does not mean
+            // "barely started", it *removes* the progress entry -- so a block under a tenth broken
+            // is indistinguishable from one nobody is touching. Nor are particles evidence: a dig
+            // whose progress keeps resetting throws them every tick and gets nowhere. An earlier
+            // version of this held the button for twenty ticks and concluded the overlay was broken.
+            serverTicks(200)
 
             shot("crumbling_cracked")
 
@@ -111,14 +112,26 @@ class CrumblingTest {
             val drawn = crumblingDraws()
             println("CRUMBLING offered=$offered visuals=$visuals draws=$drawn mining=${miningState()}")
 
-            // Asked in two steps, because "no cracks" has two completely different causes and only
+            // Held to the end, so the zero above cannot be explained away. The cogwheel goes at a
+            // little over three hundred ticks, which means the dig passed through every one of the
+            // ten breaking stages -- and not one of them produced a state to draw.
+            serverTicks(160)
+            val after = blockAt(at(2, 2, 0))
+            println("CRUMBLING finished block=$after")
+
+            assertTrue(
+                after == "Block{minecraft:air}",
+                "The cogwheel survived a three hundred and sixty tick dig, so this scene never " +
+                    "reached a late breaking stage and proves nothing either way about the overlay",
+            )
+
+            // The rest is asked in two steps, because "no cracks" has two unrelated causes and only
             // one of them is this backend's.
             //
-            // The first is what the game offers Flywheel: the list of block-breaking render states
-            // on the level's own render state, which is where the extractor puts them and the only
-            // place Flywheel looks. If that is empty while a player is demonstrably mining, nothing
-            // downstream can draw anything, and the fault is upstream of every backend -- the
-            // OpenGL one draws no cracks here either.
+            // The first is what the game offers Flywheel: the block-breaking render states the
+            // extractor fills, which is the only place Flywheel looks. If that is empty through a
+            // complete dig, nothing downstream can draw anything and the fault is upstream of every
+            // backend -- the OpenGL one draws no cracks here either.
             assertTrue(
                 offered > 0,
                 "The game offered no block-breaking states while the player was demonstrably " +
@@ -167,6 +180,11 @@ class CrumblingTest {
     /** How many of those the manager found a visual for, which is the other half of the question. */
     private suspend fun Stage.crumblingVisuals(): Int = client(watcher) {
         dev.engine_room.flywheel.impl.visualization.VisualizationManagerImpl.lastCrumblingVisuals
+    }
+
+    /** Whether the block is still there, which is how a dig that never progresses gives itself away. */
+    private suspend fun Stage.blockAt(where: BlockPos): String = server(where) { pos ->
+        serverLevel.getBlockState(pos).block.toString()
     }
 
     /** What the client thinks it is mining, for when the cracks do not appear. */
