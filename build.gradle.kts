@@ -30,8 +30,16 @@ tasks.withType<KotlinCompile>().configureEach {
  * need them are not compiled or run -- which is what makes the switch worth having: those mods pull
  * in Sable's physics and Veil's renderer, and a run that is only asking about Create should not have
  * to load them or explain their failures.
+ *
+ * Off unconditionally on Vulkan, whatever `-Psimulated` says. Veil calls `GL.getCapabilities()`
+ * from `VeilDebug.get`, with no guard, and its `DebugTextureManagerMixin` reaches that from
+ * `TextureManager.<init>` -- so on a backend with no GL context the game throws inside
+ * `Minecraft.<init>` and never reaches a frame. It is not a failure a test can report, because
+ * there is no client left to ask. Until Veil guards that call the family simply is not carried on
+ * Vulkan, and the tests needing it are neither compiled nor run.
  */
-val withSimulated = providers.gradleProperty("simulated").orNull != "false"
+val onVulkan = providers.gradleProperty("graphics").orNull.equals("vulkan", ignoreCase = true)
+val withSimulated = !onVulkan && providers.gradleProperty("simulated").orNull != "false"
 
 /**
  * Whether Sodium is in the game at all.
@@ -118,6 +126,11 @@ if (!withSimulated) {
 
 tasks.withType<Test>().configureEach {
     useJUnitPlatform()
+
+    // The same -Pgraphics the clients were launched with, so GraphicsBackendTest can hold them to
+    // it. Without this the tests cannot tell "came up on OpenGL because that is what was asked
+    // for" from "came up on OpenGL because Vulkan would not start".
+    providers.gradleProperty("graphics").orNull?.let { systemProperty("e2e.graphics", it) }
 
     if (!withSimulated) {
         exclude("**/simulated/**")
@@ -389,6 +402,14 @@ neoForge {
 
     mcDriver {
         captureDir = layout.buildDirectory.dir("e2e")
+
+        // -Pgraphics=vulkan runs the whole suite on Minecraft's Vulkan backend; unset leaves the
+        // choice to Minecraft, which is OpenGL. One suite, run either way, so a Vulkan regression
+        // shows up as the same test failing rather than as a separate thing to maintain.
+        //
+        // Minecraft falls back to OpenGL rather than failing when Vulkan cannot start, so this
+        // flag alone proves nothing -- see GraphicsBackendTest, which asserts the live backend.
+        graphicsBackend = providers.gradleProperty("graphics")
 
         // Nothing anywhere. Every test lays its own floor on ground nobody else is using, so a
         // machine cannot be standing on something an earlier test left, and the server has no world
