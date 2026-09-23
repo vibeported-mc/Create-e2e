@@ -38,3 +38,34 @@ suspend fun Stage.drawWork(): DrawWork = client(watcher) {
         directCalls = dev.engine_room.flywheel.backend.engine.blaze.BlazeStats.directCalls,
     )
 }
+
+
+/** The backend Flywheel has picked, as its registry spells it. */
+suspend fun Stage.backendId(): String = client(watcher) {
+    dev.engine_room.flywheel.api.backend.Backend.REGISTRY
+        .getIdOrThrow(dev.engine_room.flywheel.api.backend.BackendManager.currentBackend())
+        .toString()
+}
+
+/**
+ * Switches Flywheel to a named backend, the way a player does, and insists it took.
+ *
+ * Anything reading [DrawWork] or `BlazeStats` has to name its backend rather than take whichever
+ * one priority hands it. `flywheel:indirect_blaze3d` sits below `flywheel:indirect`, so on OpenGL it
+ * is never chosen -- and a test that assumed otherwise measured the old backend, found every
+ * Blaze3D counter at zero, and failed describing a renderer it was not running.
+ */
+suspend fun Stage.useBackend(id: String) {
+    client(watcher, id) { wanted ->
+        clientPlayer!!.connection.sendCommand("flywheel backend $wanted")
+        awaitTicks(5)
+    }
+
+    val got = backendId()
+    if (got != id) {
+        throw AssertionError(
+            "Flywheel would not switch to $id -- it is $got. It reports itself unsupported here, "
+                + "and every figure this test reads would describe some other backend",
+        )
+    }
+}

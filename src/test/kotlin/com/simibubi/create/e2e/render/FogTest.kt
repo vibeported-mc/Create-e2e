@@ -47,6 +47,11 @@ class FogTest {
         theClient()
         clearGround(at(0, 0, 0), radius = GROUND)
 
+        // Named, because the figures below come from this backend's own uniform block and no other
+        // backend fills it. On OpenGL priority picks flywheel:indirect, whose fog ranges read zero
+        // wet and dry alike -- which fails this test while saying nothing about fog.
+        useBackend("flywheel:indirect_blaze3d")
+
         // One long row of shafts on a single axis, driven from the near end. Shafts connect end to
         // end, so the whole row is one kinetic network and one motor turns all of it.
         setBlock(at(-1, FLOOR, 0), "create:creative_motor[facing=east]")

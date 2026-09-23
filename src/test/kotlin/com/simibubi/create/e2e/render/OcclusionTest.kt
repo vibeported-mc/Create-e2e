@@ -16,7 +16,6 @@ import dev.vibeported.mc.driver.server
 import kotlinx.serialization.Serializable
 import net.minecraft.core.BlockPos
 import net.minecraft.world.phys.Vec3
-import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
@@ -300,24 +299,6 @@ class OcclusionTest {
      * A pass that removes nothing and a pass that is never reached both leave every instance drawn,
      * and no frame rate distinguishes them.
      */
-    /** Sets Flywheel's backend the way a player does, with its client command. */
-    private suspend fun Stage.useBackend(id: String) {
-        val got = client(watcher, id) { wanted ->
-            clientPlayer!!.connection.sendCommand("flywheel backend $wanted")
-            awaitTicks(5)
-            dev.engine_room.flywheel.api.backend.Backend.REGISTRY
-                .getIdOrThrow(dev.engine_room.flywheel.api.backend.BackendManager.currentBackend())
-                .toString()
-        }
-
-        assertEquals(
-            id,
-            got,
-            "Flywheel would not switch to $id. It reports itself unsupported here, and every "
-                + "figure below would describe some other backend",
-        )
-    }
-
     private suspend fun Stage.cullCounts(): CullCounts = client(watcher) {
         val counts = dev.engine_room.flywheel.backend.engine.blaze.BlazeEngine.lastDrawManager()
             ?.cullCounts()

@@ -75,6 +75,12 @@ class ComputeSelfTestTest {
         // has instances to cull -- there is no reason to reduce a depth buffer nobody is going to
         // test against -- so an empty stage never builds one and the test reads nothing.
         clearGround(at(0, 0, 0), radius = 12)
+
+        // The pyramid belongs to this backend and is built by its draw manager, so the backend has
+        // to be the one running. On OpenGL priority picks flywheel:indirect, which builds none and
+        // leaves this reporting that the renderer never made one.
+        useBackend("flywheel:indirect_blaze3d")
+
         setBlock(at(0, 2, 0), "create:creative_motor[facing=east]")
         setBlock(at(1, 2, 0), "create:shaft[axis=x]")
         setBlock(at(2, 2, 0), "create:large_cogwheel[axis=x]")
