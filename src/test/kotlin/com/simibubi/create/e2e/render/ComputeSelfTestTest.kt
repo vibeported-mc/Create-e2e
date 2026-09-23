@@ -82,6 +82,38 @@ class ComputeSelfTestTest {
         )
     }
 
+    @Test
+    @DisplayName("A compute-written indirect draw puts the right picture on a texture")
+    fun `indirect drawing works on this backend`(cluster: ClusterScope) = cluster.stage {
+        theClient()
+
+        val result = indirectTest()
+
+        println("INDIRECT graphics=${result.graphics} passed=${result.passed}")
+
+        assertTrue(
+            result.passed,
+            "A compute-written indirect draw did not produce the expected picture on " +
+                "${result.graphics}. This is the mechanism the whole GPU-driven backend rests on " +
+                "-- the draw commands are written by a shader and consumed by the GPU, and the " +
+                "only evidence either was right is the pixel that comes out: " +
+                "${result.lines.joinToString(" | ")}",
+        )
+    }
+
+    /** Runs Flywheel's own indirect-draw self-test on the client. */
+    private suspend fun dev.vibeported.mc.driver.Stage.indirectTest(): SelfTest = client(watcher) {
+        val result = dev.engine_room.flywheel.backend.engine.blaze.IndirectDrawSelfTest.run()
+
+        SelfTest(
+            passed = result.passed,
+            available = true,
+            compute = "n/a",
+            graphics = com.mojang.blaze3d.systems.RenderSystem.getDevice().deviceInfo.backendName,
+            lines = result.lines,
+        )
+    }
+
     /** Runs Flywheel's own buffer self-test on the client. */
     private suspend fun dev.vibeported.mc.driver.Stage.bufferTest(): SelfTest = client(watcher) {
         val result = dev.engine_room.flywheel.backend.engine.blaze.BufferSelfTest.run()
