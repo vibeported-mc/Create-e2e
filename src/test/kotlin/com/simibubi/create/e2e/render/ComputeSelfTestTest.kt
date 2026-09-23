@@ -62,6 +62,39 @@ class ComputeSelfTestTest {
         )
     }
 
+    @Test
+    @DisplayName("A storage buffer keeps its contents when it grows")
+    fun `storage buffers survive a resize`(cluster: ClusterScope) = cluster.stage {
+        theClient()
+
+        val result = bufferTest()
+
+        println("BUFFER graphics=${result.graphics} passed=${result.passed}")
+
+        assertTrue(
+            result.passed,
+            "A Flywheel storage buffer lost its contents across a resize on ${result.graphics}. " +
+                "Growing is a GPU copy, and Blaze3D -- unlike glCopyNamedBufferSubData -- checks " +
+                "that the source declares COPY_SRC, the destination COPY_DST, and that the two " +
+                "slices are the same length. An arena that loses this drops every object in it " +
+                "the first time a world grows past its initial capacity, and does so far from " +
+                "here: ${result.lines.joinToString(" | ")}",
+        )
+    }
+
+    /** Runs Flywheel's own buffer self-test on the client. */
+    private suspend fun dev.vibeported.mc.driver.Stage.bufferTest(): SelfTest = client(watcher) {
+        val result = dev.engine_room.flywheel.backend.engine.blaze.BufferSelfTest.run()
+
+        SelfTest(
+            passed = result.passed,
+            available = true,
+            compute = "n/a",
+            graphics = com.mojang.blaze3d.systems.RenderSystem.getDevice().deviceInfo.backendName,
+            lines = result.lines,
+        )
+    }
+
     /** Runs Flywheel's own self-test on the client, and brings back what it said. */
     private suspend fun dev.vibeported.mc.driver.Stage.selfTest(): SelfTest = client(watcher) {
         val backend = dev.engine_room.flywheel.backend.compute.Compute.backend()
