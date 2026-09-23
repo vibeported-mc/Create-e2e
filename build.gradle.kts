@@ -86,6 +86,7 @@ val withTransmission = providers.gradleProperty("transmission").orNull == "true"
 
 // Kept beside the switch rather than in a catalogue, because they track the builds sitting next to
 // this one and move whenever those are republished.
+val FLYWHEEL_VERSION = "1.0.6"
 val SIMULATED_VERSION = "1.3.2"
 val SABLE_VERSION = "2.0.5"
 val SABLE_COMPANION_VERSION = "1.6.0"
@@ -352,6 +353,18 @@ dependencies {
     // without JourneyMap present. Project lfHFW1mp at version Z4HOwlL0, which is 26.2-6.0.7+neoforge
     // -- two patches ahead of the 6.0.5 Create compiles against.
     implementation("maven.modrinth:lfHFW1mp:Z4HOwlL0")
+
+    // Flywheel's full jar, on the compile classpath only.
+    //
+    // Create depends on `flywheel-neoforge-api`, which is cut from the `api` and `lib` source sets
+    // alone -- so the renderer's own internals, and with them the compute and buffer layers the
+    // Vulkan work adds, are not nameable through it. The tests that check those layers have to say
+    // so themselves.
+    //
+    // testCompileOnly because the mod is already in the game: Create nests the full Flywheel in its
+    // own jar, and naming it as a runtime dependency would put the same classes on the classpath
+    // twice, once loose and once extracted from a jar-in-jar.
+    testCompileOnly("dev.engine-room.flywheel:flywheel-neoforge-26.2:$FLYWHEEL_VERSION")
 
     implementation("dev.vibeported.mc.e2e:driver")
     implementation(libs.kotlinforforge)
