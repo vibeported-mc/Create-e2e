@@ -154,6 +154,10 @@ class CrumblingTest {
             }
         } finally {
             releaseAttack()
+            // Put the client back as it was found. Clients are shared between tests and the server
+            // is one server, so a player left in survival is a player some later test breaks a
+            // block with and gets nothing from.
+            runCommand("gamemode creative $watcher")
         }
     }
 
