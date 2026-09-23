@@ -151,6 +151,8 @@ class OcclusionTest {
                 "walledAgain=${walledAgain.fps}",
         )
         println("OCCLUSION work walled=${walled.work} open=${open.work}")
+        val cull = cullCounts()
+        println("OCCLUSION cull $cull")
 
         applyVideo(before.framerateLimit, before.vsync, before.clouds)
         runCommand("forceload remove all")
@@ -160,12 +162,26 @@ class OcclusionTest {
             "The client stopped drawing with the wall up: $walled",
         )
 
-        // The point of the window. If this ever fails with occlusion culling on, the pyramid's
-        // comparison is the wrong way round and it is hiding what the player can see.
         assertTrue(
             walled.instancing,
             "Flywheel is not instancing, so this scene measures block entity renderers rather than " +
                 "anything to do with occlusion",
+        )
+
+        // Something behind the wall was culled. Without this the test passes on a backend that has
+        // occlusion culling switched off, which is how it read for its whole first day.
+        assertTrue(
+            cull.occluded > 0,
+            "Nothing was culled as hidden, although the field is behind a wall: $cull",
+        )
+
+        // And the point of the window. Everything culled and nothing drawn is not success -- it is
+        // the comparison being the wrong way round, which is the failure this feature invites and
+        // which a solid wall cannot distinguish from working perfectly.
+        assertTrue(
+            cull.visible > 0,
+            "Every instance was culled, including whatever is visible through the window. The "
+                + "depth comparison is inverted and this is hiding what the player can see: $cull",
         )
     }
 
@@ -260,6 +276,37 @@ class OcclusionTest {
     private data class Speeds(val small: Float, val large: Float, val flatA: Float, val flatB: Float) {
         val allTurning: Boolean
             get() = small != 0.0f && large != 0.0f && flatA != 0.0f && flatB != 0.0f
+    }
+
+    /**
+     * Where the cull pass dropped instances, which is the only way to see why it culled nothing.
+     *
+     * A pass that removes nothing and a pass that is never reached both leave every instance drawn,
+     * and no frame rate distinguishes them.
+     */
+    private suspend fun Stage.cullCounts(): CullCounts = client(watcher) {
+        val counts = dev.engine_room.flywheel.backend.engine.blaze.BlazeEngine.lastDrawManager()
+            ?.cullCounts()
+
+        if (counts == null) {
+            CullCounts(0, 0, 0, 0, 0, 0)
+        } else {
+            CullCounts(counts[0], counts[1], counts[2], counts[3], counts[4], counts[5])
+        }
+    }
+
+    @Serializable
+    private data class CullCounts(
+        val visible: Int,
+        val tested: Int,
+        val outOfFrustum: Int,
+        val tooClose: Int,
+        val offScreen: Int,
+        val occluded: Int,
+    ) {
+        override fun toString(): String =
+            "of $tested tested: $outOfFrustum outside the frustum, $occluded hidden, $visible drawn " +
+                "($tooClose too close to test, $offScreen partly off screen)"
     }
 
     private suspend fun Stage.drawing(): Drawing = client(watcher) {
