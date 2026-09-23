@@ -53,15 +53,25 @@ import org.junit.jupiter.api.Test
  * Measured on 2026-09-23 on Vulkan with no occlusion culling at all, at 1,152 trains:
  *
  * ```
- * OCCLUSION walled=2430 open=2850 away=3808
+ * run A   walled=2498  open=2677  away=3542  walledAgain=2728
+ * run B   walled=2621  open=2894  away=3809  walledAgain=2722
  * OCCLUSION work walled=4 open=4
  * ```
  *
- * The same four instancers are processed whether the wall is there or not, which is the baseline
- * this exists to establish: nothing is culled by the wall today. `walled` being *slower* than `open`
- * is not a mystery -- the wall is a few thousand blocks of chunk geometry that also has to be drawn,
- * on top of machinery that is hidden but still submitted. The headroom is the gap between 2430 and
- * 3808.
+ * Read those as: **walled and open are the same to within the noise of this measurement**, which is
+ * worth about eight per cent run to run -- `walledAgain` lands above `open` in one run and below it
+ * in the other. The same four instancers are processed either way.
+ *
+ * <p>That is the baseline this exists to establish. Machinery hidden behind solid stone costs what
+ * machinery in plain view costs, because it is still submitted in full and only rejected per
+ * fragment. The headroom occlusion culling is chasing is the gap up to `away`, not any difference
+ * between walled and open.
+ *
+ * <p>Two traps this scene has already fallen into, both worth keeping in mind before reading any
+ * figure off it. The first reading of a run is the slow one -- teleport, chunk rebuild, pipelines
+ * compiling -- and taking it as the walled figure made the wall look four hundred frames a second
+ * expensive; hence the discarded warm-up read. And a single pair of numbers from one run is not
+ * enough to tell a real six per cent from noise, which is why `walledAgain` exists at all.
  *
  * ## The window
  *
@@ -102,6 +112,13 @@ class OcclusionTest {
         spectateAt(middleOf(at(CENTRE_XZ, EYE, -WALL_STANDOFF)), middleOf(at(CENTRE_XZ, EYE, SPAN)))
         serverTicks(SETTLE_TICKS)
 
+        // Thrown away. The first reading of a run is always the slow one -- teleport, chunk rebuild,
+        // pipelines compiling -- and taking it as the walled figure made the wall look like it cost
+        // four hundred frames a second. Measured again at the end, the same scene read higher than
+        // the wall-less one; the difference was entirely warm-up.
+        drawing()
+        serverTicks(SETTLE_TICKS)
+
         val walled = drawing()
         shot("occlusion_walled")
 
@@ -118,9 +135,20 @@ class OcclusionTest {
 
         val away = drawing()
 
+        // The wall back, and measured again. Order is a confound worth ruling out rather than
+        // explaining away: the walled figure is the first one taken after a teleport and a chunk
+        // rebuild, and the open one comes later with everything warm. If the two walled readings
+        // agree, the difference is the wall; if the second matches the open one, it was warm-up.
+        buildWall()
+        spectateAt(middleOf(at(CENTRE_XZ, EYE, -WALL_STANDOFF)), middleOf(at(CENTRE_XZ, EYE, SPAN)))
+        serverTicks(SETTLE_TICKS)
+
+        val walledAgain = drawing()
+
         println(
             "OCCLUSION backend=${walled.backend} trains=$TRAINS parts=${TRAINS * 4} " +
-                "walled=${walled.fps} open=${open.fps} away=${away.fps}",
+                "walled=${walled.fps} open=${open.fps} away=${away.fps} " +
+                "walledAgain=${walledAgain.fps}",
         )
         println("OCCLUSION work walled=${walled.work} open=${open.work}")
 
