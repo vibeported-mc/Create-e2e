@@ -115,24 +115,6 @@ class BackendParityTest {
         }
     }
 
-    /** How the last frame's draws were issued, which is what tells the fast path from the fallback. */
-    private suspend fun Stage.drawWork(): DrawWork = client(watcher) {
-        DrawWork(
-            indirectInstancers = dev.engine_room.flywheel.backend.engine.blaze.BlazeStats.indirectInstancers,
-            directInstancers = dev.engine_room.flywheel.backend.engine.blaze.BlazeStats.directInstancers,
-            indirectCalls = dev.engine_room.flywheel.backend.engine.blaze.BlazeStats.indirectCalls,
-            directCalls = dev.engine_room.flywheel.backend.engine.blaze.BlazeStats.directCalls,
-        )
-    }
-
-    @Serializable
-    private data class DrawWork(
-        val indirectInstancers: Int,
-        val directInstancers: Int,
-        val indirectCalls: Int,
-        val directCalls: Int,
-    )
-
     /**
      * One of each of the things that have gone wrong, plus the one that has not.
      *

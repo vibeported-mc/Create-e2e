@@ -132,6 +132,21 @@ class IndirectStressTest {
         serverTicks(7)
         shot("indirect_stress_later")
 
+        // The same field with the camera turned away from it, which is the cheap case every
+        // backend should be good at and the one the view above deliberately avoids.
+        //
+        // Read the two together and read them carefully: the gap between them is *not* a measure of
+        // the GPU cull pass. Flywheel drops whole instancers on the CPU when their section leaves
+        // the frustum, long before any of this runs, so most of the field never reaches the GPU at
+        // all here -- `work` below says how many instancers were left. What this pair is good for is
+        // the other direction: facing the field, the cull pass rejects nothing and still runs, so
+        // that figure is the cost of having it, paid in full with none of the saving.
+        spectateAt(middleOf(at(-20, 42, -20)), middleOf(at(-90, 42, -90)))
+        serverTicks(SETTLE_TICKS)
+        val away = drawing()
+        val work = drawWork()
+        shot("indirect_stress_away")
+
         assertTrue(
             measured.alive,
             "The client is no longer showing a level, so there is nothing to measure. A throw on " +
@@ -148,6 +163,7 @@ class IndirectStressTest {
             "STRESS backend=${measured.backend} fps=${measured.fps} (warm-up ${warm.fps}) " +
                 "parts=$MOVING_PARTS instancing=${measured.instancing}"
         )
+        println("STRESS facingAway fps=${away.fps} work=$work")
     }
 
     /**
