@@ -1,5 +1,9 @@
 package com.simibubi.create.e2e.render
 
+import com.simibubi.create.e2e.clearGround
+import com.simibubi.create.e2e.setBlock
+import com.simibubi.create.e2e.spectateAt
+import com.simibubi.create.e2e.serverTicks
 import com.simibubi.create.e2e.watcher
 import dev.vibeported.mc.driver.ClusterScope
 import dev.vibeported.mc.driver.client
@@ -59,6 +63,36 @@ class ComputeSelfTestTest {
                 "writes `i * 2 + 1` precisely so that zeros -- which is what a freshly allocated " +
                 "buffer reads as, and so what a dispatch that never happened looks like -- cannot " +
                 "pass: ${result.lines.joinToString(" | ")}",
+        )
+    }
+
+    @Test
+    @DisplayName("A depth pyramid can be built from the level's own depth buffer")
+    fun `a depth pyramid builds`(cluster: ClusterScope) = cluster.stage {
+        theClient()
+
+        // Machinery, and not for the look of it. The pyramid is built by the renderer only when it
+        // has instances to cull -- there is no reason to reduce a depth buffer nobody is going to
+        // test against -- so an empty stage never builds one and the test reads nothing.
+        clearGround(at(0, 0, 0), radius = 12)
+        setBlock(at(0, 2, 0), "create:creative_motor[facing=east]")
+        setBlock(at(1, 2, 0), "create:shaft[axis=x]")
+        setBlock(at(2, 2, 0), "create:large_cogwheel[axis=x]")
+
+        spectateAt(middleOf(at(2, 4, 5)), middleOf(at(2, 2, 0)))
+        serverTicks(40)
+
+        val result = depthPyramidTest()
+
+        println("PYRAMID graphics=${result.graphics} passed=${result.passed} " +
+            "| ${result.lines.joinToString(" | ")}")
+
+        assertTrue(
+            result.passed,
+            "A depth pyramid could not be built, so occlusion culling has nothing to read. This is " +
+                "the question it exists to answer -- whether the level's depth texture can be " +
+                "sampled at all, and whether a mip chain can be reduced by fragment passes when " +
+                "there are no compute-writable images: ${result.lines.joinToString(" | ")}",
         )
     }
 
@@ -196,6 +230,19 @@ class ComputeSelfTestTest {
         )
     }
 
+    /** Builds a depth pyramid on the client, which is what occlusion culling would read. */
+    private suspend fun dev.vibeported.mc.driver.Stage.depthPyramidTest(): SelfTest = client(watcher) {
+        val result = dev.engine_room.flywheel.backend.engine.blaze.DepthPyramidSelfTest.run()
+
+        SelfTest(
+            passed = result.passed,
+            available = true,
+            compute = "n/a",
+            graphics = com.mojang.blaze3d.systems.RenderSystem.getDevice().deviceInfo.backendName,
+            lines = result.lines,
+        )
+    }
+
     /** Asks the client to assemble and compile a pipeline per instance type. */
     private suspend fun dev.vibeported.mc.driver.Stage.pipelineTest(): SelfTest = client(watcher) {
         val result = dev.engine_room.flywheel.backend.engine.blaze.PipelineSelfTest.run()
@@ -310,3 +357,6 @@ class ComputeSelfTestTest {
         val lines: List<String>,
     )
 }
+
+private fun middleOf(pos: net.minecraft.core.BlockPos) =
+    net.minecraft.world.phys.Vec3(pos.x + 0.5, pos.y + 0.5, pos.z + 0.5)
