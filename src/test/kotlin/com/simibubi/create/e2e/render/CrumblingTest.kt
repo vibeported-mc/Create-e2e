@@ -137,9 +137,11 @@ class CrumblingTest {
                 offered > 0,
                 "The game offered no block-breaking states while the player was demonstrably " +
                     "mining, so Flywheel was never asked to draw cracks and no backend could have " +
-                    "drawn any. This is the known upstream gap described on this class, not a " +
-                    "fault in the backend -- when it is fixed, this assertion starts passing and " +
-                    "the one below becomes the real test",
+                    "drawn any. This is the race described on this class coming back: the states " +
+                    "are read at the end of the frame from a list 26.2 has already cleared and " +
+                    "refilled for the next one, and the fix is the copy taken at the head of the " +
+                    "level render. It is upstream of every backend -- the OpenGL one draws no " +
+                    "cracks here either -- so look at RenderContextImpl before looking here",
             )
 
             // Only the Blaze3D backend publishes this count; the OpenGL one leaves it at zero, and
