@@ -100,6 +100,12 @@ class HotAirBalloonTest {
             watchTheBalloon(body)
             shot("balloon_lit")
 
+            // From inside the envelope, which is the only place the hot-air overlay can be seen.
+            // It is the heated volume itself, drawn with the near surface culled away, so from
+            // outside the envelope stands in front of it and the composite discards it on depth.
+            insideTheBalloon(body)
+            shot("balloon_inside")
+
             val climb = velocityOf(body).ly
 
             assertTrue(
@@ -130,6 +136,22 @@ class HotAirBalloonTest {
         spectateAt(
             Vec3(at.x + VIEW_OUT, at.y + VIEW_UP, at.z + VIEW_OUT),
             Vec3(at.x, at.y + LOOK_UP, at.z),
+            settle = AIM,
+        )
+    }
+
+    /**
+     * Puts the camera in the middle of the envelope, looking sideways.
+     *
+     * The envelope reaches from [WALL] to [CAP] above the basket and the body's pose sits lower
+     * than that, so this climbs into it rather than aiming at it from outside.
+     */
+    private suspend fun Stage.insideTheBalloon(body: String) {
+        val at = poseOf(body)
+
+        spectateAt(
+            Vec3(at.x, at.y + INSIDE_UP, at.z),
+            Vec3(at.x + INSIDE_LOOK, at.y + INSIDE_UP, at.z),
             settle = AIM,
         )
     }
@@ -243,6 +265,12 @@ class HotAirBalloonTest {
         const val CAP = 13
 
         const val GROUND = 24
+
+        /** Above the body's pose, into the envelope's hollow. */
+        const val INSIDE_UP = 3.0
+
+        /** Far enough sideways that the camera is looking across the volume, not at a wall. */
+        const val INSIDE_LOOK = 4.0
 
         /** Head-room over the stage floor: the balloon is fifteen blocks tall before it takes off. */
         const val SKY = 48
