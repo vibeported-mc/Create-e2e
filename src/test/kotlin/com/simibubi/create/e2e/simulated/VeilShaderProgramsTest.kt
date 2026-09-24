@@ -71,7 +71,13 @@ class VeilShaderProgramsTest {
             manager.getShader(net.minecraft.resources.Identifier.parse(name)) == null
         }
 
-        Loaded(total = manager.shaders.size, missing = missing)
+        // Counted through getShader rather than off the registry. A program is registered once
+        // its sources are processed, which happens on either backend now, and compiled only on
+        // OpenGL -- so the registry's size says how many were *seen*, and answers 31 on a backend
+        // where none of them works. Asking the way a mod asks is the only honest count.
+        val usable = wanted.names.size - missing.size
+
+        Loaded(total = usable, missing = missing)
     }
 
     /**
@@ -87,7 +93,7 @@ class VeilShaderProgramsTest {
     @Serializable
     private data class Loaded(val total: Int, val missing: List<String>) {
         override fun toString(): String =
-            "$total programs compiled" +
+            "$total of the family's programs usable" +
                 if (missing.isEmpty()) "" else ", missing ${missing.size}: ${missing.joinToString()}"
     }
 
