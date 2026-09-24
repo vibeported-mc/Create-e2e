@@ -31,15 +31,18 @@ tasks.withType<KotlinCompile>().configureEach {
  * in Sable's physics and Veil's renderer, and a run that is only asking about Create should not have
  * to load them or explain their failures.
  *
- * Off unconditionally on Vulkan, whatever `-Psimulated` says. Veil calls `GL.getCapabilities()`
- * from `VeilDebug.get`, with no guard, and its `DebugTextureManagerMixin` reaches that from
- * `TextureManager.<init>` -- so on a backend with no GL context the game throws inside
- * `Minecraft.<init>` and never reaches a frame. It is not a failure a test can report, because
- * there is no client left to ask. Until Veil guards that call the family simply is not carried on
- * Vulkan, and the tests needing it are neither compiled nor run.
+ * This used to be off unconditionally on Vulkan, and the reason is worth keeping: Veil called
+ * `GL.getCapabilities()` from `VeilDebug.get` with no guard, and its `DebugTextureManagerMixin`
+ * reaches that from `TextureManager.<init>` -- so on a backend with no GL context the game threw
+ * inside `Minecraft.<init>` and never reached a frame. Not a failure a test could report, because
+ * there was no client left to ask, and not one that showed up as a skip either: 56 tests across 31
+ * files simply vanished from every Vulkan run.
+ *
+ * Veil guards that call now, and the probes behind it, so the family is carried on both backends.
+ * If a Vulkan run starts failing every Simulated test at once, look there first -- a client that
+ * dies in its constructor looks from here like the whole family being broken.
  */
-val onVulkan = providers.gradleProperty("graphics").orNull.equals("vulkan", ignoreCase = true)
-val withSimulated = !onVulkan && providers.gradleProperty("simulated").orNull != "false"
+val withSimulated = providers.gradleProperty("simulated").orNull != "false"
 
 /**
  * Whether Sodium is in the game at all.
