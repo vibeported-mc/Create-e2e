@@ -117,7 +117,7 @@ class VeilShaderDrawTest {
 
                 val texture = fbo.getColorAttachment(0).gpuTextureView!!.texture()
 
-                foundry.veil.api.client.render.VeilScreenQuad.draw(fbo, program)
+                foundry.veil.api.client.render.VeilDraw.screenQuad(fbo, program)
                 drew = true
 
                 readBack(texture, pixel)?.let { failure = it }
