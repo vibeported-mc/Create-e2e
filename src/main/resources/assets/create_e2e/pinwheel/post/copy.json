@@ -1,0 +1,11 @@
+{
+  "stages": [
+    {
+      "type": "veil:blit",
+      "shader": "create_e2e:copy",
+      "in": "create_e2e:post_in",
+      "out": "create_e2e:post_out",
+      "clear": false
+    }
+  ]
+}
