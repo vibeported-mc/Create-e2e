@@ -55,3 +55,53 @@ internal fun readBack(texture: com.mojang.blaze3d.textures.GpuTexture, into: Int
 
 /** Three would do -- the fence clears two submits after the one it was made in. */
 private const val MAX_SUBMITS = 16
+
+/**
+ * Copies a whole texture back and hands each pixel's alpha to [perPixel].
+ *
+ * For asking whether anything was drawn at all, rather than whether one pixel is a colour. A
+ * single sample cannot answer that: a framebuffer whose subject sits in the middle with
+ * transparent margins reads empty at every corner and full in the centre, and which one a test
+ * happens to look at is not a property of the code under test.
+ *
+ * @param texture the texture to read
+ * @param perPixel given each pixel's alpha, 0-255
+ * @return `null` on success, or why the readback did not happen
+ */
+internal fun readBackAll(
+    texture: com.mojang.blaze3d.textures.GpuTexture,
+    perPixel: (Int) -> Unit,
+): String? {
+    val device = com.mojang.blaze3d.systems.RenderSystem.getDevice()
+    val encoder = device.createCommandEncoder()
+    val width = texture.getWidth(0)
+    val height = texture.getHeight(0)
+
+    device.createBuffer(
+        { "veil test readback all" },
+        com.mojang.blaze3d.buffers.GpuBuffer.USAGE_MAP_READ or
+            com.mojang.blaze3d.buffers.GpuBuffer.USAGE_COPY_DST,
+        (width * height * 4).toLong(),
+    ).use { readback ->
+        var done = false
+
+        encoder.copyTextureToBuffer(texture, readback, 0L, {
+            readback.map(true, false).use { mapped ->
+                val data = mapped.data()
+                for (pixel in 0 until width * height) {
+                    perPixel(data.get(pixel * 4 + 3).toInt() and 0xFF)
+                }
+            }
+            done = true
+        }, 0)
+
+        var submits = 0
+        while (!done && submits < MAX_SUBMITS) {
+            encoder.submit()
+            com.mojang.blaze3d.systems.RenderSystem.executePendingTasks()
+            submits++
+        }
+
+        return if (done) null else "the readback never signalled after $MAX_SUBMITS submits"
+    }
+}
