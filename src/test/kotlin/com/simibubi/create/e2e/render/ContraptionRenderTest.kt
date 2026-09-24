@@ -64,6 +64,12 @@ class ContraptionRenderTest {
         theClient()
         clearGround(at(0, 0, 0), radius = GROUND)
 
+        // Named, because everything measured below comes from this backend's own counters and no
+        // other backend fills them. On OpenGL priority picks flywheel:indirect, which publishes
+        // nothing here -- so without this the test fails on GL for a reason that has nothing to do
+        // with contraptions.
+        useBackend("flywheel:indirect_blaze3d")
+
         buildBearing()
         serverTicks(SPIN_UP_TICKS)
 
@@ -100,6 +106,8 @@ class ContraptionRenderTest {
 
         shot("contraption_turned")
 
+        // Before the assertions, so a failure still hands the client back as it was found.
+        restoreBackend()
         runCommand("forceload remove all")
 
         assertTrue(
