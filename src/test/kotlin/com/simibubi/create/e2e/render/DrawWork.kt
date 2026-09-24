@@ -24,10 +24,17 @@ data class DrawWork(
     val directInstancers: Int,
     val indirectCalls: Int,
     val directCalls: Int,
+    /** Where draws went when they went nowhere: empty, no texture, or no pipeline. */
+    val drawsEmpty: Int,
+    val drawsWithoutTexture: Int,
+    val drawsWithoutPipeline: Int,
 ) {
     override fun toString(): String =
         "$indirectInstancers instancers drawn indirectly in $indirectCalls calls" +
-            if (directInstancers == 0) "" else ", and $directInstancers fell back"
+            (if (directInstancers == 0) "" else ", and $directInstancers fell back") +
+            (if (drawsEmpty + drawsWithoutTexture + drawsWithoutPipeline == 0) "" else
+                "; skipped $drawsEmpty empty, $drawsWithoutTexture without a texture, " +
+                    "$drawsWithoutPipeline without a pipeline")
 }
 
 suspend fun Stage.drawWork(): DrawWork = client(watcher) {
@@ -36,6 +43,11 @@ suspend fun Stage.drawWork(): DrawWork = client(watcher) {
         directInstancers = dev.engine_room.flywheel.backend.engine.blaze.BlazeStats.directInstancers,
         indirectCalls = dev.engine_room.flywheel.backend.engine.blaze.BlazeStats.indirectCalls,
         directCalls = dev.engine_room.flywheel.backend.engine.blaze.BlazeStats.directCalls,
+        drawsEmpty = dev.engine_room.flywheel.backend.engine.blaze.BlazeStats.drawsEmpty,
+        drawsWithoutTexture =
+            dev.engine_room.flywheel.backend.engine.blaze.BlazeStats.drawsWithoutTexture,
+        drawsWithoutPipeline =
+            dev.engine_room.flywheel.backend.engine.blaze.BlazeStats.drawsWithoutPipeline,
     )
 }
 
