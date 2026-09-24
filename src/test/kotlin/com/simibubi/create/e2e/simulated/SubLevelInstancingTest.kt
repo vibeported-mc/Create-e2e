@@ -100,6 +100,11 @@ class SubLevelInstancingTest {
         // that is exactly what this scene did when it was written. The counters said three
         // instancers and zero calls, and the picture showed the platform with the machinery's
         // static blocks on it and no moving parts at all.
+        //
+        // The cause was that Sable declares three extra values on an embedded environment in its
+        // own copies of Flywheel's shader files, which this backend does not include because it
+        // generates its own -- so the declarations were missing while the uses were not, and the
+        // pipeline failed to compile on an undeclared identifier.
         assertTrue(
             work.indirectCalls > 0,
             "The instances survived culling and then no draw was issued for any of them, so the " +
