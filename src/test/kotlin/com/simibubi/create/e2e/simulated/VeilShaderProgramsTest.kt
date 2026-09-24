@@ -26,8 +26,8 @@ import org.junit.jupiter.api.Test
  *
  * ## What this asserts, and what it deliberately does not
  *
- * An earlier version of this test demanded that four named programs be *compiled* on both backends,
- * and was red on Vulkan by design. That demand turned out to rest on a false premise, so it is gone.
+ * An earlier version of this test demanded that four named programs be compiled *and drawn with* on
+ * both backends, and was red on Vulkan by design. The drawing half rested on a false premise.
  * Each of the four, checked one at a time:
  *
  * - `simulated:end_sea` was fetched by `EndSeaRenderer` and then not drawn with. The sea is drawn
@@ -44,19 +44,25 @@ import org.junit.jupiter.api.Test
  * - `aeronautics:levitite` is reached only from `SodiumWorldRendererMixin`, which is registered in
  *   no mixin config on 26.2.
  *
- * So after the End Sea fix the family has **no live consumer of a Veil shader program on Vulkan**,
- * and a Vulkan implementation of `ShaderProgram` would today have nothing to serve. What is left to
- * guard is the half that was built and does run on both backends: the *sources*. Processing them --
- * the version, the includes, the `#veil:buffer` blocks, and the loose uniforms gathered into one
- * std140 block by `ShaderUniformBlockProcessor` -- is parsing and text, and it runs anywhere. It is
- * also the half a Vulkan `ShaderProgram` will be built on, so a regression in it is worth catching
- * now rather than when something finally needs it.
+ * So the family has no *direct* live consumer of a Veil shader program on Vulkan. It has an
+ * indirect one: `BlitPostStage` runs a program, so every post pipeline is one, and both blocked
+ * paths above go through post-processing. What they are blocked on is the framebuffer, not this.
+ *
+ * What this asserts is therefore the two halves that exist. That the sources process -- the
+ * version, the includes, the `#veil:buffer` blocks, the loose uniforms gathered into one std140
+ * block -- and that what comes out compiles into a usable program. Off OpenGL that second half is
+ * a `RenderPipeline` built from those sources, which is the only check anywhere that the GLSL Veil
+ * emits is legal SPIR-V: blocks, samplers, bindings, vertex format and all.
+ *
+ * It does not assert that anything can be *drawn* through one. `BlazeShaderProgram.bind()` throws,
+ * because binding a program outside a render pass is not something 26.2 has and every consumer
+ * here is written as bind-then-draw. That comes with the first consumer that needs it.
  */
 @DrivesMinecraft
 class VeilShaderProgramsTest {
 
     @Test
-    @DisplayName("Veil processes the family's shader program sources on either backend")
+    @DisplayName("Veil builds the family's shader programs on either backend")
     fun `veil processes its shader program sources`(cluster: ClusterScope) = cluster.stage {
         theClient()
 
@@ -76,26 +82,41 @@ class VeilShaderProgramsTest {
             "These were not registered, so their sources did not survive processing: " +
                 loaded.missing.joinToString(),
         )
+
+        assertTrue(
+            loaded.broken.isEmpty(),
+            "These registered but did not compile into a usable program, so the GLSL Veil emits " +
+                "for them is not legal on this backend: " + loaded.broken.joinToString(),
+        )
     }
 
     /**
      * Which of the wanted programs Veil knows about.
      *
-     * Counted off the registry rather than through `getShader`, and the difference is the point.
-     * `getShader` answers "is there a usable program", which is an OpenGL question and is null on
-     * Vulkan by design. The registry answers "did the sources process", which is the thing this
-     * test is about and is true on both.
+     * Read off the registry rather than through `getShader`, and the difference is the point.
+     * `getShader` still answers null off OpenGL, deliberately: it is the switch that decides
+     * whether every `if (shader == null) return` in Veil and the mods above it starts proceeding,
+     * and it should be thrown when there is something for them to proceed into. The registry is
+     * the same map without that decision attached.
      */
     private suspend fun Stage.shaderPrograms(): Loaded = client(watcher, Wanted(WANTED)) { wanted ->
         val registered = foundry.veil.api.client.render.VeilRenderSystem.renderer()
             .getShaderManager()
             .getShaders()
 
-        val missing = wanted.names.filterNot { name ->
-            registered.containsKey(net.minecraft.resources.Identifier.parse(name))
+        val wantedIds = wanted.names.associateWith { net.minecraft.resources.Identifier.parse(it) }
+
+        val missing = wanted.names.filterNot { registered.containsKey(wantedIds[it]) }
+
+        // isValid rather than a null check. Off OpenGL a program is a RenderPipeline, and a
+        // pipeline whose shaders did not compile is not absent -- it is present and invalid, and
+        // drawing through one is skipped rather than refused.
+        val broken = wanted.names.filter { name ->
+            val program = registered[wantedIds[name]]
+            program != null && !program.isValid
         }
 
-        Loaded(total = registered.size, missing = missing)
+        Loaded(total = registered.size, missing = missing, broken = broken)
     }
 
     /**
@@ -109,10 +130,15 @@ class VeilShaderProgramsTest {
     private data class Wanted(val names: List<String>)
 
     @Serializable
-    private data class Loaded(val total: Int, val missing: List<String>) {
+    private data class Loaded(
+        val total: Int,
+        val missing: List<String>,
+        val broken: List<String>,
+    ) {
         override fun toString(): String =
             "$total programs registered" +
-                if (missing.isEmpty()) "" else ", missing ${missing.size}: ${missing.joinToString()}"
+                (if (missing.isEmpty()) "" else ", missing ${missing.size}: ${missing.joinToString()}") +
+                (if (broken.isEmpty()) "" else ", broken ${broken.size}: ${broken.joinToString()}")
     }
 
     private companion object {
