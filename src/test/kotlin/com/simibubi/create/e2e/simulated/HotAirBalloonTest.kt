@@ -1,6 +1,7 @@
 package com.simibubi.create.e2e.simulated
 
 import com.simibubi.create.e2e.clearGround
+import com.simibubi.create.e2e.watcher
 import com.simibubi.create.e2e.fill
 import com.simibubi.create.e2e.serverTicks
 import com.simibubi.create.e2e.setBlock
@@ -8,6 +9,7 @@ import com.simibubi.create.e2e.shot
 import com.simibubi.create.e2e.spectateAt
 import dev.vibeported.mc.driver.ClusterScope
 import dev.vibeported.mc.driver.Stage
+import dev.vibeported.mc.driver.client
 import dev.vibeported.mc.driver.junit.DrivesMinecraft
 import dev.vibeported.mc.driver.junit.stage
 import dev.vibeported.mc.driver.server
@@ -103,8 +105,71 @@ class HotAirBalloonTest {
             // From inside the envelope, which is the only place the hot-air overlay can be seen.
             // It is the heated volume itself, drawn with the near surface culled away, so from
             // outside the envelope stands in front of it and the composite discards it on depth.
+            // Filled much further before looking. The overlay's alpha is
+            // clamp(Position.y - CutoffY, 0, 1) and CutoffY is (1 - filled) * (height + 1), so an
+            // envelope that is a few percent full has a cutoff above its own roof and the whole
+            // volume is discarded. That is the effect working, not failing -- there is no hot air
+            // to show -- and it is why looking at a freshly lit balloon shows nothing at all.
+            // Flown, not waited out.
+            //
+            // This used to burn a flat two minutes on the theory that the envelope needed that
+            // long. What the test is actually waiting for is the balloon to leave the ground, and
+            // that happens the moment lift passes weight -- which is sooner, and varies with how
+            // fast the burner happens to be running. So it watches for the thing it cares about
+            // and stops there.
+            //
+            // It also turns a hang into a diagnosis. A balloon that never rises used to look like
+            // a slow test and then fail on an assertion two minutes later; now it says how high it
+            // got and how long it was given.
+            val liftedOff = riseTo(body, restingY + ROSE_BY)
+
+            assertTrue(
+                liftedOff,
+                "The balloon never left the ground. It was given " + BRIM + " ticks to get from " +
+                    restingY + " to " + (restingY + ROSE_BY) + " and reached " + poseOf(body).y +
+                    ", with " + lift + " lift under it",
+            )
+
             insideTheBalloon(body)
             shot("balloon_inside")
+
+            // Read twice, a few ticks apart. A screenshot cannot answer either of the two
+            // questions that matter about this effect -- the envelope is white and the
+            // composite is a soft light, so "faint" and "absent" look the same -- and it cannot
+            // tell a still picture from a moving one at all.
+            val first = overlayCoverage()
+            serverTicks(SCROLL_TICKS)
+            val second = overlayCoverage()
+            println("OVERLAY $first then $second")
+
+            assertTrue(
+                first.found,
+                "The overlay framebuffer does not exist, so the effect never got as far as " +
+                    "having somewhere to draw: " + first.failure,
+            )
+
+            assertTrue(
+                first.covered > 0,
+                "The overlay framebuffer is empty, so the heated volume was not drawn into it. " +
+                    "Everything downstream of this -- the composite, the depth comparison -- " +
+                    "has nothing to work with: " + first.failure,
+            )
+
+            // The texture scrolls with the game time, a sixteenth of a texel at a step, so two
+            // reads a second apart are of different pictures. Equal is the shape of a uniform
+            // that is set and never reaches the shader, which is a still overlay rather than a
+            // missing one and is the harder of the two to notice.
+            assertTrue(
+                second.covered > 0,
+                "The overlay was drawn once and then not again: " + first + " then " + second,
+            )
+
+            assertTrue(
+                first.checksum != second.checksum,
+                "The overlay drew the same pixels " + SCROLL_TICKS + " ticks apart, so it is " +
+                    "not animating. Scroll is set every frame from the game time; a value that " +
+                    "never reaches the shader looks exactly like this: " + first + " vs " + second,
+            )
 
             val climb = velocityOf(body).ly
 
@@ -154,6 +219,97 @@ class HotAirBalloonTest {
             Vec3(at.x + INSIDE_LOOK, at.y + INSIDE_UP, at.z),
             settle = AIM,
         )
+    }
+
+    /**
+     * What the overlay's own framebuffer holds.
+     *
+     * Reached by reflection because the renderer keeps it private and static, which is right --
+     * it is one buffer for the whole screen and nothing else has any business with it.
+     *
+     * The checksum is over the colour bytes rather than the count, because the volume's outline
+     * barely moves as it scrolls: what changes is the texture across it, so a count of covered
+     * pixels would be the same number twice and prove nothing.
+     */
+    private suspend fun Stage.overlayCoverage(): Overlay = client(watcher) {
+        var found = false
+        var covered = 0
+        var checksum = 0
+        var light = 0L
+        var failure = ""
+
+        try {
+            val field = Class
+                .forName("dev.eriksonn.aeronautics.content.blocks.hot_air.balloon.effect.ClientBalloonEffectRenderer")
+                .getDeclaredField("overlayFbo")
+            field.isAccessible = true
+            val fbo = field.get(null)
+                as? foundry.veil.api.client.render.framebuffer.AdvancedFbo
+
+            if (fbo == null) {
+                failure = "no overlay framebuffer has been built"
+            } else {
+                found = true
+                val texture = fbo.getColorAttachment(0).gpuTextureView!!.texture()
+                var index = 0
+                failure = readBackAll(texture) { r, g, b, a ->
+                    if (a != 0) {
+                        covered++
+                        // Colour, not alpha. The volume's shape is the same from one frame to the
+                        // next and its alpha with it; what scrolling moves is the texture across
+                        // that shape, which only the colour channels show.
+                        checksum = checksum * 31 + r + g * 7 + b * 13 + a + index
+                        light += r + g + b
+                    }
+                    index++
+                } ?: ""
+            }
+        } catch (t: Throwable) {
+            failure = t::class.java.name + ": " + t.message
+        }
+
+        Overlay(
+            found = found,
+            covered = covered,
+            checksum = checksum,
+            brightness = if (covered == 0) 0 else (light / (covered * 3)).toInt(),
+            failure = failure,
+        )
+    }
+
+    @kotlinx.serialization.Serializable
+    data class Overlay(
+        val found: Boolean,
+        val covered: Int,
+        val checksum: Int,
+        /** Mean of the colour channels over the drawn pixels: 0 is black, 255 is white. */
+        val brightness: Int,
+        val failure: String,
+    ) {
+        override fun toString(): String =
+            "found=$found covered=$covered sum=$checksum light=$brightness" +
+                if (failure.isEmpty()) "" else " failure=$failure"
+    }
+
+    /**
+     * Ticks until the balloon has climbed past [target], or gives up.
+     *
+     * Polled in chunks rather than tick by tick: each round trip to the server costs more than
+     * the ticks it asks for, so asking one at a time would make the waiting slower than the
+     * thing being waited for.
+     *
+     * @return whether it got there
+     */
+    private suspend fun Stage.riseTo(body: String, target: Double): Boolean {
+        var waited = 0
+        while (waited < BRIM) {
+            serverTicks(STEP)
+            waited += STEP
+            if (poseOf(body).y > target) {
+                return true
+            }
+        }
+        return false
     }
 
     /** How much lift the balloon this burner belongs to is generating. */
@@ -272,6 +428,16 @@ class HotAirBalloonTest {
         /** Far enough sideways that the camera is looking across the volume, not at a wall. */
         const val INSIDE_LOOK = 4.0
 
+        /**
+         * Not twenty, and not any multiple of it.
+         *
+         * Scroll is {@code gameTime / -20}, so over twenty ticks it moves by exactly 1.0 -- and the
+         * shader adds it straight to a UV of a repeating texture. A whole-number shift samples the
+         * same texels, so twenty ticks apart the overlay is pixel-for-pixel identical however well
+         * it is animating. Seven is a third of a period and shares no factor with twenty.
+         */
+        const val SCROLL_TICKS = 7
+
         /** Head-room over the stage floor: the balloon is fifteen blocks tall before it takes off. */
         const val SKY = 48
 
@@ -285,6 +451,13 @@ class HotAirBalloonTest {
          * rest of it climbing.
          */
         const val FILL = 200
+
+        /** Long enough for the envelope to be full enough that the overlay is not all cut off. */
+        /** The cap on waiting for lift-off, not the time it is expected to take. */
+        const val BRIM = 2400
+
+        /** How many ticks to ask for between checks: a round trip costs more than the ticks do. */
+        const val STEP = 40
 
         /** Metres per second upwards. Below this the body is only settling. */
         const val RISING = 0.05

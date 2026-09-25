@@ -261,7 +261,7 @@ class ContraptionDiagramTest {
                     // One pixel is not enough here. The diagram sits in the middle of its buffer with
                     // transparent margins, so a corner sample proves nothing either way -- the whole
                     // surface is copied back and counted.
-                    failure = readBackAll(texture) { alpha -> if (alpha != 0) covered++ } ?: ""
+                    failure = readBackAll(texture) { _, _, _, alpha -> if (alpha != 0) covered++ } ?: ""
                     readBack = failure.isEmpty()
                 }
             }

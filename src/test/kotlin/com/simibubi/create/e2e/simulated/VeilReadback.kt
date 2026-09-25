@@ -64,13 +64,17 @@ private const val MAX_SUBMITS = 16
  * transparent margins reads empty at every corner and full in the centre, and which one a test
  * happens to look at is not a property of the code under test.
  *
- * @param texture the texture to read
- * @param perPixel given each pixel's alpha, 0-255
+ * Each pixel arrives as all four channels, not just alpha. Alpha alone answers "was anything
+ * drawn here" and nothing else -- a scrolling texture moves colour across a shape whose alpha
+ * never changes, so a test watching alpha calls a moving picture still.
+ *
+ * @param texture  the texture to read
+ * @param perPixel given each pixel as r, g, b, a, each 0-255
  * @return `null` on success, or why the readback did not happen
  */
 internal fun readBackAll(
     texture: com.mojang.blaze3d.textures.GpuTexture,
-    perPixel: (Int) -> Unit,
+    perPixel: (Int, Int, Int, Int) -> Unit,
 ): String? {
     val device = com.mojang.blaze3d.systems.RenderSystem.getDevice()
     val encoder = device.createCommandEncoder()
@@ -89,7 +93,12 @@ internal fun readBackAll(
             readback.map(true, false).use { mapped ->
                 val data = mapped.data()
                 for (pixel in 0 until width * height) {
-                    perPixel(data.get(pixel * 4 + 3).toInt() and 0xFF)
+                    perPixel(
+                        data.get(pixel * 4).toInt() and 0xFF,
+                        data.get(pixel * 4 + 1).toInt() and 0xFF,
+                        data.get(pixel * 4 + 2).toInt() and 0xFF,
+                        data.get(pixel * 4 + 3).toInt() and 0xFF,
+                    )
                 }
             }
             done = true
@@ -103,5 +112,30 @@ internal fun readBackAll(
         }
 
         return if (done) null else "the readback never signalled after $MAX_SUBMITS submits"
+    }
+}
+
+/**
+ * Copies a whole texture back as packed RGB, one int per pixel, alpha in the top byte.
+ *
+ * For comparing two readings of the same texture pixel by pixel. A summary -- a count, a
+ * checksum -- cannot tell *how much* changed, and that distinction is the whole question when
+ * something is drawn over a boundary that is itself moving: a shape growing by a few pixels a
+ * second changes a thin edge, and a texture scrolling across that shape changes nearly all of it.
+ *
+ * @param texture the texture to read
+ * @param into    filled with width*height packed pixels; must be at least that long
+ * @return `null` on success, or why the readback did not happen
+ */
+internal fun readBackPixels(
+    texture: com.mojang.blaze3d.textures.GpuTexture,
+    into: IntArray,
+): String? {
+    var i = 0
+    return readBackAll(texture) { r, g, b, a ->
+        if (i < into.size) {
+            into[i] = (a shl 24) or (r shl 16) or (g shl 8) or b
+        }
+        i++
     }
 }
